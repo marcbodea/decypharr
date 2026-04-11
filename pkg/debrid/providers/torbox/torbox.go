@@ -13,12 +13,14 @@ import (
 	"runtime"
 	"strconv"
 	"strings"
+	"sync"
 	"time"
 
 	json "github.com/bytedance/sonic"
 
 	"github.com/rs/zerolog"
 	"github.com/sirrobot01/decypharr/internal/config"
+	"github.com/sirrobot01/decypharr/internal/customerror"
 	"github.com/sirrobot01/decypharr/internal/logger"
 	"github.com/sirrobot01/decypharr/internal/request"
 	"github.com/sirrobot01/decypharr/internal/utils"
@@ -43,6 +45,9 @@ type Torbox struct {
 	logger                zerolog.Logger
 	Profile               *types.Profile
 	config                config.Debrid
+	downloadPresentCache  sync.Map
+	downloadPresentMu     sync.Mutex
+	downloadPresentLoaded bool
 }
 
 func New(dc config.Debrid, ratelimits map[string]ratelimit.Limiter) (*Torbox, error) {
@@ -570,8 +575,63 @@ func (tb *Torbox) RefreshDownloadLinks() error {
 	return tb.accountsManager.RefreshLinks(tb.fetchDownloadLinks)
 }
 
-func (tb *Torbox) CheckFile(ctx context.Context, infohash, link string) error {
+func (tb *Torbox) loadDownloadPresent() error {
+	offset := 0
+	total := 0
+
+	for {
+		var res TorrentsListResponse
+
+		resp, err := tb.doGet("/api/torrents/mylist", map[string]string{"offset": fmt.Sprintf("%d", offset)}, &res)
+		if err != nil {
+			return err
+		}
+		if resp.StatusCode < 200 || resp.StatusCode >= 300 {
+			return fmt.Errorf("torbox API error: Status: %d", resp.StatusCode)
+		}
+		if res.Data == nil || len(*res.Data) == 0 {
+			break
+		}
+
+		for _, t := range *res.Data {
+			tb.downloadPresentCache.Store(strconv.Itoa(t.Id), t.DownloadPresent)
+		}
+
+		total += len(*res.Data)
+		offset += len(*res.Data)
+	}
+
+	tb.logger.Info().Int("count", total).Msg("loaded download_present cache for repair")
 	return nil
+}
+
+func (tb *Torbox) CheckFile(ctx context.Context, infohash, link string) error {
+	tb.downloadPresentMu.Lock()
+	if !tb.downloadPresentLoaded {
+		if err := tb.loadDownloadPresent(); err != nil {
+			tb.downloadPresentMu.Unlock()
+			return err
+		}
+		tb.downloadPresentLoaded = true
+	}
+	tb.downloadPresentMu.Unlock()
+
+	torrentID := link
+	if strings.HasPrefix(link, "torbox://") {
+		parts := strings.SplitN(strings.TrimPrefix(link, "torbox://"), "/", 2)
+		if len(parts) > 0 {
+			torrentID = parts[0]
+		}
+	}
+
+	if present, ok := tb.downloadPresentCache.Load(torrentID); ok {
+		if !present.(bool) {
+			return customerror.HosterUnavailableError
+		}
+		return nil
+	}
+
+	return customerror.HosterUnavailableError
 }
 
 func (tb *Torbox) GetAvailableSlots() (int, error) {
@@ -719,7 +779,6 @@ func (tb *Torbox) SpeedTest(ctx context.Context) types.SpeedTestResult {
 	return result
 }
 
-
 func (tb *Torbox) SupportsCheck() bool {
-	return false
+	return true
 }

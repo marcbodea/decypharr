@@ -1,6 +1,8 @@
 package qbit
 
 import (
+	"path/filepath"
+
 	"github.com/sirrobot01/decypharr/pkg/storage"
 )
 
@@ -400,9 +402,30 @@ type TorrentFile struct {
 
 // ToQBitTorrent converts to QBitTorrent format for API compatibility
 func convertToQBitTorrentTorrent(t *storage.Entry) Torrent {
+	name := t.Name
+	if t.OriginalFilename != "" {
+		name = t.OriginalFilename
+	}
+
+	contentPath := t.ContentPath
+	if contentPath == "" {
+		contentPath = t.DownloadPath()
+	}
+	if len(t.Files) == 1 {
+		for _, f := range t.Files {
+			contentPath = filepath.Join(t.DownloadPath(), f.Name)
+			break
+		}
+	}
+
+	var completionOn int64
+	if t.CompletedAt != nil {
+		completionOn = t.CompletedAt.Unix()
+	}
+
 	qbitTorrent := Torrent{
 		Hash:         t.InfoHash,
-		Name:         t.Name,
+		Name:         name,
 		Size:         t.Size,
 		Progress:     t.Progress,
 		Dlspeed:      t.Speed,
@@ -411,9 +434,9 @@ func convertToQBitTorrentTorrent(t *storage.Entry) Torrent {
 		State:        t.State,
 		Category:     t.Category,
 		SavePath:     t.SavePath,
-		ContentPath:  t.ContentPath,
+		ContentPath:  contentPath,
 		AddedOn:      t.CreatedAt.Unix(),
-		CompletionOn: 0,
+		CompletionOn: completionOn,
 		Debrid:       t.ActiveProvider,
 		DebridID:     "",
 		AmountLeft:   int64(float64(t.Size) * (1 - t.Progress)),

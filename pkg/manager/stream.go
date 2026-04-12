@@ -119,6 +119,18 @@ func describeHTTPError(resp *http.Response) string {
 	return fmt.Sprintf("status=%d body=%s", resp.StatusCode, text)
 }
 
+func shouldRefreshDownloadLink(downloadLink string, statusCode int, errDetail string) bool {
+	if downloadLink == "" {
+		return false
+	}
+	if statusCode == http.StatusBadRequest &&
+		(strings.Contains(errDetail, "Invalid Presigned Token") ||
+			strings.Contains(errDetail, "Please get a new download link from TorBox")) {
+		return true
+	}
+	return false
+}
+
 // StreamMetadata describes the headers/status for a streaming response before data flows.
 type StreamMetadata struct {
 	Header        http.Header
@@ -223,78 +235,101 @@ func (m *Manager) streamHTTP(ctx context.Context, torrent *storage.Entry, filena
 	buf := *bufPtr
 	defer streamBufPool.Put(bufPtr)
 
-	resp, reqErr := m.doRequest(ctx, downloadLink.DownloadLink, start, end)
-	if reqErr != nil {
-		// Network/connection error - retriable
-		return reqErr
-	}
-
-	// Got response - check status
-	if resp.StatusCode == http.StatusOK || resp.StatusCode == http.StatusPartialContent {
-		var header http.Header
-		if onReady != nil {
-			header = resp.Header.Clone()
-		}
-		meta := &StreamMetadata{
-			Header:        header,
-			StatusCode:    resp.StatusCode,
-			ContentLength: resp.ContentLength,
+	currentLink := downloadLink
+	for attempt := 0; attempt < 2; attempt++ {
+		resp, reqErr := m.doRequest(ctx, currentLink.DownloadLink, start, end)
+		if reqErr != nil {
+			// Network/connection error - retriable
+			return reqErr
 		}
 
-		isPartial := expectedLen > 0 && (start > 0 || end < file.Size-1)
-		if expectedLen > 0 {
-			meta.ContentLength = expectedLen
-			if header != nil {
-				header["Content-Length"] = []string{strconv.FormatInt(expectedLen, 10)}
+		// Got response - check status
+		if resp.StatusCode == http.StatusOK || resp.StatusCode == http.StatusPartialContent {
+			var header http.Header
+			if onReady != nil {
+				header = resp.Header.Clone()
 			}
-		}
-		if isPartial && resp.StatusCode == http.StatusOK {
-			meta.StatusCode = http.StatusPartialContent
-			if header != nil {
-				header["Content-Range"] = []string{buildContentRange(start, end, file.Size)}
+			meta := &StreamMetadata{
+				Header:        header,
+				StatusCode:    resp.StatusCode,
+				ContentLength: resp.ContentLength,
 			}
+
+			isPartial := expectedLen > 0 && (start > 0 || end < file.Size-1)
+			if expectedLen > 0 {
+				meta.ContentLength = expectedLen
+				if header != nil {
+					header["Content-Length"] = []string{strconv.FormatInt(expectedLen, 10)}
+				}
+			}
+			if isPartial && resp.StatusCode == http.StatusOK {
+				meta.StatusCode = http.StatusPartialContent
+				if header != nil {
+					header["Content-Range"] = []string{buildContentRange(start, end, file.Size)}
+				}
+			}
+
+			if onReady != nil {
+				if readyErr := onReady(meta); readyErr != nil {
+					resp.Body.Close()
+					return retry.Unrecoverable(readyErr)
+				}
+			}
+
+			// Stream response body into provided writer
+			reader := io.Reader(resp.Body)
+			if expectedLen > 0 {
+				reader = io.LimitReader(resp.Body, expectedLen)
+			}
+			n, copyErr := io.CopyBuffer(writer, reader, buf)
+			resp.Body.Close()
+
+			if expectedLen > 0 && n < expectedLen && copyErr == nil {
+				copyErr = io.ErrUnexpectedEOF
+			}
+
+			if copyErr != nil && copyErr != io.EOF {
+				// Check if this is a retriable error (timeout, network issue)
+				// vs a permanent error (context cancelled by user)
+				if ctx.Err() != nil {
+					// User/system cancelled - don't retry
+					return retry.Unrecoverable(ctx.Err())
+				}
+				if isConnectionError(copyErr) || strings.Contains(copyErr.Error(), "timeout") {
+					// Network/timeout error - retriable
+					return copyErr
+				}
+				// Unknown error - don't retry to avoid infinite loops
+				return retry.Unrecoverable(copyErr)
+			}
+			return nil
 		}
 
-		if onReady != nil {
-			if readyErr := onReady(meta); readyErr != nil {
-				resp.Body.Close()
-				return retry.Unrecoverable(readyErr)
-			}
-		}
-
-		// Stream response body into provided writer
-		reader := io.Reader(resp.Body)
-		if expectedLen > 0 {
-			reader = io.LimitReader(resp.Body, expectedLen)
-		}
-		n, copyErr := io.CopyBuffer(writer, reader, buf)
+		errDetail := describeHTTPError(resp)
 		resp.Body.Close()
 
-		if expectedLen > 0 && n < expectedLen && copyErr == nil {
-			copyErr = io.ErrUnexpectedEOF
+		if attempt == 0 && shouldRefreshDownloadLink(currentLink.DownloadLink, resp.StatusCode, errDetail) {
+			refreshedLink, refreshErr := m.linkService.RefreshLink(ctx, torrent, currentLink)
+			if refreshErr == nil && !refreshedLink.Empty() {
+				currentLink = refreshedLink
+				continue
+			}
+			return retry.Unrecoverable(StreamError{
+				Err:       fmt.Errorf("failed to refresh download link after upstream error (%s): %w", errDetail, refreshErr),
+				Retryable: false,
+				LinkError: true,
+			})
 		}
 
-		if copyErr != nil && copyErr != io.EOF {
-			// Check if this is a retriable error (timeout, network issue)
-			// vs a permanent error (context cancelled by user)
-			if ctx.Err() != nil {
-				// User/system cancelled - don't retry
-				return retry.Unrecoverable(ctx.Err())
-			}
-			if isConnectionError(copyErr) || strings.Contains(copyErr.Error(), "timeout") {
-				// Network/timeout error - retriable
-				return copyErr
-			}
-			// Unknown error - don't retry to avoid infinite loops
-			return retry.Unrecoverable(copyErr)
-		}
-		return nil
+		return retry.Unrecoverable(StreamError{
+			Err:       fmt.Errorf("unexpected HTTP response: %s", errDetail),
+			Retryable: false,
+			LinkError: false,
+		})
 	}
 
-	errDetail := describeHTTPError(resp)
-	resp.Body.Close()
 	return retry.Unrecoverable(StreamError{
-		Err:       fmt.Errorf("unexpected HTTP response: %s", errDetail),
+		Err:       fmt.Errorf("stream retry loop exhausted for %s", filename),
 		Retryable: false,
 		LinkError: false,
 	})

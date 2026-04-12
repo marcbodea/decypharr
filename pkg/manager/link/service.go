@@ -392,6 +392,11 @@ func (s *Service) invalidateAndRefetch(ctx context.Context, entry *storage.Entry
 	return s.fetchLink(ctx, entry, link.Filename)
 }
 
+// RefreshLink invalidates a cached link and fetches a fresh one.
+func (s *Service) RefreshLink(ctx context.Context, entry *storage.Entry, link types.DownloadLink) (types.DownloadLink, error) {
+	return s.invalidateAndRefetch(ctx, entry, link)
+}
+
 // Clear removes all validation tracking entries
 func (s *Service) Clear() {
 	s.validated.Clear()

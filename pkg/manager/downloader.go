@@ -194,10 +194,12 @@ func (d *Downloader) processSymlink(entry *storage.Entry, mountPath string) erro
 	entry.IsDownloading = true
 	_ = d.manager.queue.Update(entry)
 
-	// Run ffprobe on files to warm cache and trigger imports
+	// Run ffprobe on files to warm cache and trigger imports.
+	// The 5-file cap is only meant for NZB-style imports; torrent season packs
+	// should warm every media file so Arr can inspect the full set promptly.
 	if !d.manager.config.SkipPreCache && len(filePaths) > 0 {
 		probeFiles := filePaths
-		if len(probeFiles) > MaxNZBPreCacheFiles {
+		if entry.IsNZB() && len(probeFiles) > MaxNZBPreCacheFiles {
 			probeFiles = probeFiles[:MaxNZBPreCacheFiles]
 		}
 		d.logger.Debug().Int("files", len(probeFiles)).Msgf("Running ffprobe on %s", entry.Name)

@@ -1,10 +1,7 @@
 name: Beta Docker Build
 
 on:
-  push:
-    branches:
-      - beta
-
+  workflow_dispatch:
 permissions:
   contents: read
   packages: write

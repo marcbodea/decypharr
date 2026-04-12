@@ -101,6 +101,24 @@ func (e StreamError) Error() string {
 	return e.Err.Error()
 }
 
+func describeHTTPError(resp *http.Response) string {
+	if resp == nil {
+		return "response was nil"
+	}
+
+	body, err := io.ReadAll(io.LimitReader(resp.Body, 2048))
+	if err != nil {
+		return fmt.Sprintf("status=%d body_read_error=%v", resp.StatusCode, err)
+	}
+
+	text := strings.TrimSpace(string(body))
+	if text == "" {
+		return fmt.Sprintf("status=%d", resp.StatusCode)
+	}
+
+	return fmt.Sprintf("status=%d body=%s", resp.StatusCode, text)
+}
+
 // StreamMetadata describes the headers/status for a streaming response before data flows.
 type StreamMetadata struct {
 	Header        http.Header
@@ -273,9 +291,10 @@ func (m *Manager) streamHTTP(ctx context.Context, torrent *storage.Entry, filena
 		return nil
 	}
 
+	errDetail := describeHTTPError(resp)
 	resp.Body.Close()
 	return retry.Unrecoverable(StreamError{
-		Err:       fmt.Errorf("unexpected HTTP status: %d", resp.StatusCode),
+		Err:       fmt.Errorf("unexpected HTTP response: %s", errDetail),
 		Retryable: false,
 		LinkError: false,
 	})

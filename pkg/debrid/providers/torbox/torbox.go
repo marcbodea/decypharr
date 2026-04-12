@@ -123,8 +123,8 @@ func (tb *Torbox) doGet(endpoint string, queryParams map[string]string, result i
 	}
 	defer resp.Body.Close()
 
-	if result != nil && resp.StatusCode >= 200 && resp.StatusCode < 300 && resp.ContentLength != 0 {
-		if err := json.ConfigDefault.NewDecoder(resp.Body).Decode(result); err != nil {
+	if result != nil && resp.ContentLength != 0 {
+		if err := json.ConfigDefault.NewDecoder(resp.Body).Decode(result); err != nil && resp.StatusCode >= 200 && resp.StatusCode < 300 {
 			return resp, err
 		}
 	}
@@ -242,6 +242,9 @@ func (tb *Torbox) SubmitMagnet(torrent *types.Torrent) (*types.Torrent, error) {
 	}
 
 	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
+		if data.Detail != "" || data.Error != nil {
+			return nil, fmt.Errorf("torbox API error: Status: %d, Error: %v, Detail: %s", resp.StatusCode, data.Error, data.Detail)
+		}
 		return nil, fmt.Errorf("torbox API error: Status: %d", resp.StatusCode)
 	}
 	if data.Data == nil {

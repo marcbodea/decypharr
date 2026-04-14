@@ -29,4 +29,5 @@ type Client interface {
 	DeleteLink(dl types.DownloadLink) error
 	SpeedTest(ctx context.Context) types.SpeedTestResult
 	SupportsCheck() bool
+	SupportsAvailabilityCheck() bool
 }

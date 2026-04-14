@@ -785,3 +785,7 @@ func (tb *Torbox) SpeedTest(ctx context.Context) types.SpeedTestResult {
 func (tb *Torbox) SupportsCheck() bool {
 	return true
 }
+
+func (tb *Torbox) SupportsAvailabilityCheck() bool {
+	return true
+}

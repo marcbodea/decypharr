@@ -737,3 +737,7 @@ func (dl *DebridLink) SpeedTest(ctx context.Context) types.SpeedTestResult {
 func (dl *DebridLink) SupportsCheck() bool {
 	return false
 }
+
+func (dl *DebridLink) SupportsAvailabilityCheck() bool {
+	return true
+}

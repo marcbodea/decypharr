@@ -587,3 +587,7 @@ func (ad *AllDebrid) SpeedTest(ctx context.Context) types.SpeedTestResult {
 func (ad *AllDebrid) SupportsCheck() bool {
 	return false
 }
+
+func (ad *AllDebrid) SupportsAvailabilityCheck() bool {
+	return false
+}

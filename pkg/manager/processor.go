@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"path/filepath"
+	"strings"
 	"time"
 
 	"github.com/sirrobot01/decypharr/internal/config"
@@ -15,6 +16,20 @@ import (
 	"github.com/sirrobot01/decypharr/pkg/storage"
 	"github.com/sirrobot01/decypharr/pkg/usenet"
 )
+
+func isHashAvailable(db common.Client, infoHash string) bool {
+	if infoHash == "" || !db.SupportsAvailabilityCheck() {
+		return false
+	}
+
+	for hash, available := range db.IsAvailable([]string{infoHash}) {
+		if available && strings.EqualFold(hash, infoHash) {
+			return true
+		}
+	}
+
+	return false
+}
 
 // AddNewTorrent creates a torrent from import request and processes it
 func (m *Manager) AddNewTorrent(ctx context.Context, importReq *ImportRequest) error {
@@ -349,6 +364,16 @@ func (m *Manager) SendToDebrid(ctx context.Context, importRequest *ImportRequest
 			Str("Name", debridTorrent.Name).
 			Str("Action", string(importRequest.Action)).
 			Msg("Processing torrent")
+
+		if !debridTorrent.DownloadUncached && db.SupportsAvailabilityCheck() && debridTorrent.InfoHash != "" {
+			if !isHashAvailable(db, debridTorrent.InfoHash) {
+				errs = append(errs, fmt.Errorf("torrent: %s not cached (availability check)", debridTorrent.Name))
+				_logger.Info().
+					Str("hash", debridTorrent.InfoHash).
+					Msg("Skipping submit because provider availability check did not confirm cache availability")
+				continue
+			}
+		}
 
 		dbt, err := db.SubmitMagnet(debridTorrent)
 		if err != nil || dbt == nil || dbt.Id == "" {

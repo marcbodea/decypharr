@@ -37,6 +37,19 @@ message ProviderEntryProto {
     map<string, ProviderFileProto> files = 8;
     int64 downloaded_at_unix = 9;
     bool has_downloaded_at = 10;
+    double ratio = 11;
+}
+
+message SeedingPolicyProto {
+    double stop_on_ratio = 1;
+    bool has_stop_on_ratio = 2;
+    int32 stop_after_minutes = 3;
+    bool has_stop_after_minutes = 4;
+    int64 stop_requested_at_unix = 5;
+    bool has_stop_requested_at = 6;
+    int64 stop_completed_at_unix = 7;
+    bool has_stop_completed_at = 8;
+    string last_stop_error = 9;
 }
 
 // ============================================================================
@@ -91,6 +104,7 @@ message EntryProto {
     int32 error_count = 37;
     int64 last_error_time_unix = 38;
     bool has_last_error_time = 39;
+    SeedingPolicyProto seeding_policy = 40;
 }
 
 // ============================================================================

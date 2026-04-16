@@ -31,6 +31,10 @@ func (s availabilityClientStub) DeleteTorrent(torrentId string) error {
 	return nil
 }
 
+func (s availabilityClientStub) StopSeeding(torrentId string) error {
+	return nil
+}
+
 func (s availabilityClientStub) IsAvailable(infohashes []string) map[string]bool {
 	return s.available
 }

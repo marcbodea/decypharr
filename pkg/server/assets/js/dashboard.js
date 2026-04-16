@@ -14,7 +14,8 @@ class TorrentDashboard {
             selectedState: '',
             sortBy: 'added_on',
             sortOrder: 'desc',
-            selectedTorrentContextMenu: null
+            selectedTorrentContextMenu: null,
+            currentSeedingTorrent: null
         };
 
         this.refs = {
@@ -30,7 +31,21 @@ class TorrentDashboard {
             torrentContextMenu: document.getElementById('torrentContextMenu'),
             paginationControls: document.getElementById('paginationControls'),
             paginationInfo: document.getElementById('paginationInfo'),
-            emptyState: document.getElementById('emptyState')
+            emptyState: document.getElementById('emptyState'),
+            seedingPolicyModal: document.getElementById('seedingPolicyModal'),
+            seedingPolicyTorrentName: document.getElementById('seedingPolicyTorrentName'),
+            seedingPolicyTorrentHash: document.getElementById('seedingPolicyTorrentHash'),
+            seedingPolicyProvider: document.getElementById('seedingPolicyProvider'),
+            seedingPolicySeedStart: document.getElementById('seedingPolicySeedStart'),
+            seedingPolicyElapsed: document.getElementById('seedingPolicyElapsed'),
+            seedingPolicyCurrentRatio: document.getElementById('seedingPolicyCurrentRatio'),
+            seedingPolicyStopRequested: document.getElementById('seedingPolicyStopRequested'),
+            seedingPolicyStopCompleted: document.getElementById('seedingPolicyStopCompleted'),
+            seedingPolicyLastError: document.getElementById('seedingPolicyLastError'),
+            seedingRatioLimitInput: document.getElementById('seedingRatioLimitInput'),
+            seedingTimeLimitInput: document.getElementById('seedingTimeLimitInput'),
+            saveSeedingPolicyBtn: document.getElementById('saveSeedingPolicyBtn'),
+            clearSeedingPolicyBtn: document.getElementById('clearSeedingPolicyBtn')
         };
 
         this.searchTimeout = null;
@@ -103,6 +118,9 @@ class TorrentDashboard {
                 this.toggleTorrentSelection(e.target.dataset.hash, e.target.checked);
             }
         });
+
+        this.refs.saveSeedingPolicyBtn.addEventListener('click', () => this.saveSeedingPolicy());
+        this.refs.clearSeedingPolicyBtn.addEventListener('click', () => this.clearSeedingPolicy());
     }
 
     bindContextMenu() {
@@ -298,7 +316,7 @@ class TorrentDashboard {
                         ${this.renderProgressBar(torrent.progress)}
                     </td>
                     <td>
-                        <span class="text-sm">${this.formatSpeed(torrent.dlspeed)}</span>
+                        <span class="text-sm">${this.formatSpeed(torrent.speed ?? torrent.dlspeed)}</span>
                     </td>
                     <td>
                         ${torrent.category ? `<span class="badge badge-sm badge-outline">${this.escapeHtml(torrent.category)}</span>` : '-'}
@@ -307,15 +325,27 @@ class TorrentDashboard {
                         ${this.renderProtocolBadge(torrent.protocol)}
                     </td>
                     <td>
-                        ${torrent.debrid ? `<span class="badge badge-sm badge-primary">${this.escapeHtml(torrent.debrid)}</span>` : '-'}
+                        ${(torrent.debrid || torrent.active_provider)
+                            ? `<span class="badge badge-sm badge-primary">${this.escapeHtml(torrent.debrid || torrent.active_provider)}</span>`
+                            : '-'}
                     </td>
                     <td>
-                        <span class="text-sm">${torrent.num_seeds || 0}</span>
+                        ${this.renderSeedingCell(torrent)}
+                    </td>
+                    <td>
+                        <span class="text-sm">${torrent.seeders || torrent.num_seeds || 0}</span>
                     </td>
                     <td>
                         ${this.renderStateBadge(torrent.state)}
                     </td>
                     <td>
+                        ${torrent.protocol === 'torrent' ? `
+                        <button class="btn btn-ghost btn-xs"
+                                title="Edit Seeding Policy"
+                                onclick="window.dashboard.openSeedingPolicyModal('${torrent.info_hash}');">
+                            <i class="bi bi-stopwatch"></i>
+                        </button>
+                        ` : ''}
                         <button class="btn btn-ghost btn-xs text-error"
                                 title="Delete Torrent"
                                 onclick="window.dashboard.deleteTorrent('${torrent.info_hash}', '${this.escapeAttr(torrent.category || '')}', false);">
@@ -370,6 +400,50 @@ class TorrentDashboard {
         return `<span class="badge ${p.class} badge-sm"><i class="${p.icon} mr-1"></i>${p.text}</span>`;
     }
 
+    renderSeedingCell(torrent) {
+        if (torrent.protocol !== 'torrent' || !torrent.seeding_policy) {
+            return '<span class="text-sm text-base-content/40">-</span>';
+        }
+
+        const policy = torrent.seeding_policy;
+        const placement = this.getActivePlacement(torrent);
+        const lines = [];
+
+        if (policy.stop_on_ratio != null) {
+            const currentRatio = placement && typeof placement.ratio === 'number'
+                ? this.formatRatio(placement.ratio)
+                : '-';
+            lines.push(`
+                <div class="text-xs">
+                    <span class="font-medium">Ratio</span>
+                    <span class="text-base-content/70">${currentRatio} / ${this.formatRatio(policy.stop_on_ratio)}</span>
+                </div>
+            `);
+        }
+
+        if (policy.stop_after_minutes != null) {
+            const elapsedSeconds = this.getElapsedSeedingSeconds(torrent);
+            const elapsed = elapsedSeconds == null
+                ? '-'
+                : window.decypharrUtils.formatDuration(elapsedSeconds);
+            const limit = window.decypharrUtils.formatDuration(policy.stop_after_minutes * 60);
+            lines.push(`
+                <div class="text-xs">
+                    <span class="font-medium">Time</span>
+                    <span class="text-base-content/70">${elapsed} / ${limit}</span>
+                </div>
+            `);
+        }
+
+        if (policy.stop_completed_at) {
+            lines.push('<div class="text-xs text-success">Stopped</div>');
+        } else if (policy.stop_requested_at) {
+            lines.push('<div class="text-xs text-warning">Stop requested</div>');
+        }
+
+        return lines.join('') || '<span class="text-sm text-base-content/40">-</span>';
+    }
+
     renderPagination() {
         const start = (this.state.currentPage - 1) * this.state.itemsPerPage + 1;
         const end = Math.min(start + this.state.itemsPerPage - 1, this.state.total);
@@ -413,6 +487,190 @@ class TorrentDashboard {
         if (page < 1 || page > this.state.totalPages) return;
         this.state.currentPage = page;
         this.loadTorrents();
+    }
+
+    getTorrentFromState(hash) {
+        return this.state.torrents.find(torrent => torrent.info_hash === hash) || null;
+    }
+
+    getActivePlacement(torrent) {
+        if (!torrent || !torrent.providers || !torrent.active_provider) {
+            return null;
+        }
+        return torrent.providers[torrent.active_provider] || null;
+    }
+
+    getSeedingStart(torrent) {
+        const placement = this.getActivePlacement(torrent);
+        return placement?.downloaded_at || torrent.completed_at || null;
+    }
+
+    getElapsedSeedingSeconds(torrent) {
+        const start = this.getSeedingStart(torrent);
+        if (!start) {
+            return null;
+        }
+
+        const startTime = new Date(start);
+        if (Number.isNaN(startTime.getTime())) {
+            return null;
+        }
+
+        return Math.max(0, Math.floor((Date.now() - startTime.getTime()) / 1000));
+    }
+
+    formatTimestamp(value) {
+        if (!value) {
+            return '-';
+        }
+
+        const date = new Date(value);
+        if (Number.isNaN(date.getTime())) {
+            return '-';
+        }
+
+        return date.toLocaleString();
+    }
+
+    formatRatio(value) {
+        if (value == null || Number.isNaN(Number(value))) {
+            return '-';
+        }
+        return Number(value).toFixed(2);
+    }
+
+    async openSeedingPolicyModal(hash) {
+        this.refs.seedingPolicyModal.showModal();
+        this.setSeedingPolicyLoadingState(true);
+
+        try {
+            const response = await window.decypharrUtils.fetcher(`/api/torrents/${encodeURIComponent(hash)}`);
+            if (!response.ok) {
+                throw new Error(await response.text() || 'Failed to load torrent details');
+            }
+
+            const torrent = await response.json();
+            this.state.currentSeedingTorrent = torrent;
+            this.updateTorrentInState(torrent);
+            this.populateSeedingPolicyModal(torrent);
+        } catch (error) {
+            console.error('Error loading seeding policy details:', error);
+            window.decypharrUtils.createToast(`Failed to load seeding details: ${error.message}`, 'error');
+            this.refs.seedingPolicyModal.close();
+        } finally {
+            this.setSeedingPolicyLoadingState(false);
+        }
+    }
+
+    populateSeedingPolicyModal(torrent) {
+        const policy = torrent.seeding_policy || {};
+        const placement = this.getActivePlacement(torrent);
+        const elapsedSeconds = this.getElapsedSeedingSeconds(torrent);
+
+        this.refs.seedingPolicyTorrentName.textContent = torrent.name || torrent.original_filename || torrent.info_hash;
+        this.refs.seedingPolicyTorrentHash.textContent = torrent.info_hash || '';
+        this.refs.seedingPolicyProvider.textContent = torrent.active_provider || '-';
+        this.refs.seedingPolicySeedStart.textContent = this.formatTimestamp(this.getSeedingStart(torrent));
+        this.refs.seedingPolicyElapsed.textContent = elapsedSeconds == null
+            ? '-'
+            : window.decypharrUtils.formatDuration(elapsedSeconds);
+        this.refs.seedingPolicyCurrentRatio.textContent = placement && typeof placement.ratio === 'number'
+            ? this.formatRatio(placement.ratio)
+            : '-';
+        this.refs.seedingPolicyStopRequested.textContent = this.formatTimestamp(policy.stop_requested_at);
+        this.refs.seedingPolicyStopCompleted.textContent = this.formatTimestamp(policy.stop_completed_at);
+        this.refs.seedingPolicyLastError.textContent = policy.last_stop_error || '-';
+        this.refs.seedingRatioLimitInput.value = policy.stop_on_ratio != null ? policy.stop_on_ratio : '';
+        this.refs.seedingTimeLimitInput.value = policy.stop_after_minutes != null ? policy.stop_after_minutes : '';
+    }
+
+    setSeedingPolicyLoadingState(isLoading) {
+        this.refs.saveSeedingPolicyBtn.disabled = isLoading;
+        this.refs.clearSeedingPolicyBtn.disabled = isLoading;
+        this.refs.seedingRatioLimitInput.disabled = isLoading;
+        this.refs.seedingTimeLimitInput.disabled = isLoading;
+    }
+
+    parseOptionalFloat(value, fieldName) {
+        if (value === '') {
+            return null;
+        }
+
+        const parsed = Number.parseFloat(value);
+        if (!Number.isFinite(parsed) || parsed < 0) {
+            throw new Error(`${fieldName} must be a number greater than or equal to 0`);
+        }
+        return parsed;
+    }
+
+    parseOptionalInteger(value, fieldName) {
+        if (value === '') {
+            return null;
+        }
+
+        const parsed = Number.parseInt(value, 10);
+        if (!Number.isInteger(parsed) || parsed < 0) {
+            throw new Error(`${fieldName} must be an integer greater than or equal to 0`);
+        }
+        return parsed;
+    }
+
+    async saveSeedingPolicy() {
+        const torrent = this.state.currentSeedingTorrent;
+        if (!torrent) {
+            return;
+        }
+
+        let payload;
+        try {
+            payload = {
+                ratio_limit: this.parseOptionalFloat(this.refs.seedingRatioLimitInput.value.trim(), 'Ratio limit'),
+                seeding_time_limit_minutes: this.parseOptionalInteger(this.refs.seedingTimeLimitInput.value.trim(), 'Seeding time limit')
+            };
+        } catch (error) {
+            window.decypharrUtils.createToast(error.message, 'error');
+            return;
+        }
+
+        this.setSeedingPolicyLoadingState(true);
+        try {
+            const response = await window.decypharrUtils.fetcher(
+                `/api/torrents/${encodeURIComponent(torrent.info_hash)}/seeding-policy`,
+                {
+                    method: 'PUT',
+                    body: JSON.stringify(payload)
+                }
+            );
+            if (!response.ok) {
+                throw new Error(await response.text() || 'Failed to save seeding policy');
+            }
+
+            const updated = await response.json();
+            this.state.currentSeedingTorrent = updated;
+            this.updateTorrentInState(updated);
+            this.populateSeedingPolicyModal(updated);
+            this.renderTorrents();
+            this.updateSelectionUI();
+            window.decypharrUtils.createToast('Seeding policy updated');
+        } catch (error) {
+            console.error('Error saving seeding policy:', error);
+            window.decypharrUtils.createToast(`Failed to save seeding policy: ${error.message}`, 'error');
+        } finally {
+            this.setSeedingPolicyLoadingState(false);
+        }
+    }
+
+    async clearSeedingPolicy() {
+        this.refs.seedingRatioLimitInput.value = '';
+        this.refs.seedingTimeLimitInput.value = '';
+        await this.saveSeedingPolicy();
+    }
+
+    updateTorrentInState(updatedTorrent) {
+        const index = this.state.torrents.findIndex(torrent => torrent.info_hash === updatedTorrent.info_hash);
+        if (index !== -1) {
+            this.state.torrents[index] = updatedTorrent;
+        }
     }
 
     toggleEmptyState() {

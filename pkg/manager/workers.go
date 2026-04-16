@@ -16,6 +16,7 @@ func (m *Manager) runInitialCalls(ctx context.Context) {
 	go m.refreshDownloadLinks(ctx)
 	go m.trackAvailableSlots(ctx)
 	go m.processQueuedEntries()
+	go m.processSeedingPolicies(ctx)
 	go m.syncAccounts()
 }
 
@@ -86,6 +87,18 @@ func (m *Manager) addQueueProcessorJob(ctx context.Context) error {
 			} else {
 				m.logger.Debug().Msgf("Remove stalled torrents job scheduled for every %s", "1m")
 			}
+		}
+	}
+
+	if jd, err := utils.ConvertToJobDef("1m"); err != nil {
+		m.logger.Error().Err(err).Msg("Failed to convert seeding policy interval to job definition")
+	} else {
+		if _, err := m.scheduler.NewJob(jd, gocron.NewTask(func() {
+			m.processSeedingPolicies(ctx)
+		}), gocron.WithContext(ctx), gocron.WithName("seeding-policies")); err != nil {
+			m.logger.Error().Err(err).Msg("Failed to create seeding policy job")
+		} else {
+			m.logger.Debug().Msg("Seeding policy job scheduled for every 1m")
 		}
 	}
 

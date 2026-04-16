@@ -8,6 +8,7 @@ import (
 	"sort"
 	"strconv"
 	"strings"
+	"time"
 
 	json "github.com/bytedance/sonic"
 
@@ -22,6 +23,11 @@ import (
 	"github.com/sourcegraph/conc/iter"
 	"golang.org/x/crypto/bcrypt"
 )
+
+type SeedingPolicyUpdateRequest struct {
+	RatioLimit              *float64 `json:"ratio_limit"`
+	SeedingTimeLimitMinutes *int     `json:"seeding_time_limit_minutes"`
+}
 
 func (s *Server) handleGetArrs(w http.ResponseWriter, r *http.Request) {
 	utils.JSONResponse(w, s.manager.Arr().GetAll(), http.StatusOK)
@@ -162,7 +168,7 @@ func (s *Server) handleAddContent(w http.ResponseWriter, r *http.Request) {
 			}
 
 		case "torrent":
-			importReq := manager.NewTorrentRequest(debridName, downloadFolder, task.magnet, _arr, config.DownloadAction(action), downloadUncached, callbackUrl, manager.ImportTypeAPI, skipMultiSeason)
+			importReq := manager.NewTorrentRequest(debridName, downloadFolder, task.magnet, _arr, config.DownloadAction(action), downloadUncached, callbackUrl, manager.ImportTypeAPI, skipMultiSeason, nil)
 			if err := s.manager.AddNewTorrent(ctx, importReq); err != nil {
 				s.logger.Error().Err(err).Str("source", task.source).Msg("Failed to add torrent")
 				importReq.Error = err.Error()
@@ -318,6 +324,9 @@ func (s *Server) handleGetTorrents(w http.ResponseWriter, r *http.Request) {
 
 	// GetReader all torrents
 	allTorrents := s.manager.Queue().ListFilter("", config.ProtocolAll, "", nil, "added_on", false)
+	for _, t := range allTorrents {
+		t.Sanitize()
+	}
 
 	// Apply filters
 	filteredTorrents := make([]*storage.Entry, 0)
@@ -386,6 +395,153 @@ func (s *Server) handleGetTorrents(w http.ResponseWriter, r *http.Request) {
 		"has_next":    page < totalPages,
 		"categories":  categories,
 	}, http.StatusOK)
+}
+
+func cloneSeedingPolicy(policy *storage.SeedingPolicy) *storage.SeedingPolicy {
+	if policy == nil {
+		return nil
+	}
+
+	cloned := &storage.SeedingPolicy{
+		LastStopError: policy.LastStopError,
+	}
+	if policy.StopOnRatio != nil {
+		ratio := *policy.StopOnRatio
+		cloned.StopOnRatio = &ratio
+	}
+	if policy.StopAfterMinutes != nil {
+		minutes := *policy.StopAfterMinutes
+		cloned.StopAfterMinutes = &minutes
+	}
+	if policy.StopRequestedAt != nil {
+		requestedAt := *policy.StopRequestedAt
+		cloned.StopRequestedAt = &requestedAt
+	}
+	if policy.StopCompletedAt != nil {
+		completedAt := *policy.StopCompletedAt
+		cloned.StopCompletedAt = &completedAt
+	}
+	return cloned
+}
+
+func buildSeedingPolicy(req SeedingPolicyUpdateRequest) (*storage.SeedingPolicy, error) {
+	if req.RatioLimit != nil && *req.RatioLimit < 0 {
+		return nil, fmt.Errorf("ratio_limit must be >= 0")
+	}
+	if req.SeedingTimeLimitMinutes != nil && *req.SeedingTimeLimitMinutes < 0 {
+		return nil, fmt.Errorf("seeding_time_limit_minutes must be >= 0")
+	}
+	if req.RatioLimit == nil && req.SeedingTimeLimitMinutes == nil {
+		return nil, nil
+	}
+
+	policy := &storage.SeedingPolicy{}
+	if req.RatioLimit != nil {
+		ratio := *req.RatioLimit
+		policy.StopOnRatio = &ratio
+	}
+	if req.SeedingTimeLimitMinutes != nil {
+		minutes := *req.SeedingTimeLimitMinutes
+		policy.StopAfterMinutes = &minutes
+	}
+
+	return policy, nil
+}
+
+func (s *Server) getTorrentForUI(hash string) (*storage.Entry, error) {
+	if torrent, err := s.manager.Queue().GetTorrent(hash); err == nil && torrent != nil {
+		torrent.Sanitize()
+		return torrent, nil
+	}
+	if torrent, err := s.manager.GetEntry(hash); err == nil && torrent != nil {
+		torrent.Sanitize()
+		return torrent, nil
+	}
+	return nil, fmt.Errorf("torrent not found")
+}
+
+func (s *Server) applySeedingPolicyToTorrent(hash string, policy *storage.SeedingPolicy) (*storage.Entry, error) {
+	updatedAt := time.Now()
+	updatedAny := false
+
+	if torrent, err := s.manager.Queue().GetTorrent(hash); err == nil && torrent != nil {
+		torrent.SeedingPolicy = cloneSeedingPolicy(policy)
+		torrent.UpdatedAt = updatedAt
+		if err := s.manager.Queue().Update(torrent); err != nil {
+			return nil, err
+		}
+		updatedAny = true
+	}
+
+	if torrent, err := s.manager.GetEntry(hash); err == nil && torrent != nil {
+		torrent.SeedingPolicy = cloneSeedingPolicy(policy)
+		torrent.UpdatedAt = updatedAt
+		if err := s.manager.AddOrUpdate(torrent, nil); err != nil {
+			return nil, err
+		}
+		updatedAny = true
+	}
+
+	if !updatedAny {
+		return nil, fmt.Errorf("torrent not found")
+	}
+
+	return s.getTorrentForUI(hash)
+}
+
+func (s *Server) handleGetTorrent(w http.ResponseWriter, r *http.Request) {
+	hash := chi.URLParam(r, "hash")
+	if hash == "" {
+		http.Error(w, "No hash provided", http.StatusBadRequest)
+		return
+	}
+
+	torrent, err := s.getTorrentForUI(hash)
+	if err != nil {
+		http.Error(w, "Torrent not found", http.StatusNotFound)
+		return
+	}
+
+	utils.JSONResponse(w, torrent, http.StatusOK)
+}
+
+func (s *Server) handleUpdateTorrentSeedingPolicy(w http.ResponseWriter, r *http.Request) {
+	hash := chi.URLParam(r, "hash")
+	if hash == "" {
+		http.Error(w, "No hash provided", http.StatusBadRequest)
+		return
+	}
+
+	torrent, err := s.getTorrentForUI(hash)
+	if err != nil {
+		http.Error(w, "Torrent not found", http.StatusNotFound)
+		return
+	}
+	if !torrent.IsTorrent() {
+		http.Error(w, "Seeding policy can only be updated for torrents", http.StatusBadRequest)
+		return
+	}
+
+	var req SeedingPolicyUpdateRequest
+	if err := json.ConfigDefault.NewDecoder(r.Body).Decode(&req); err != nil {
+		http.Error(w, "Invalid request body: "+err.Error(), http.StatusBadRequest)
+		return
+	}
+
+	policy, err := buildSeedingPolicy(req)
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusBadRequest)
+		return
+	}
+
+	updated, err := s.applySeedingPolicyToTorrent(hash, policy)
+	if err != nil {
+		s.logger.Error().Err(err).Str("hash", hash).Msg("Failed to update seeding policy")
+		http.Error(w, "Failed to update seeding policy", http.StatusInternalServerError)
+		return
+	}
+
+	utils.JSONResponse(w, updated, http.StatusOK)
 }
 
 // sortQueuedTorrents sorts torrents based on the given field and order

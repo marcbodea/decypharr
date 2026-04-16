@@ -30,17 +30,18 @@ const (
 )
 
 type ImportRequest struct {
-	Name             string                `json:"name"`
-	NZBContent       []byte                `json:"-,omitempty"`
-	Id               string                `json:"id"`
-	DownloadFolder   string                `json:"downloadFolder"`
-	SelectedDebrid   string                `json:"debrid"`
-	Magnet           *utils.Magnet         `json:"magnet"`
-	Arr              *arr.Arr              `json:"arr"`
-	Action           config.DownloadAction `json:"action"`
-	DownloadUncached *bool                 `json:"downloadUncached"`
-	CallBackUrl      string                `json:"callBackUrl"`
-	SkipMultiSeason  bool                  `json:"skip_multi_season"`
+	Name             string                 `json:"name"`
+	NZBContent       []byte                 `json:"-,omitempty"`
+	Id               string                 `json:"id"`
+	DownloadFolder   string                 `json:"downloadFolder"`
+	SelectedDebrid   string                 `json:"debrid"`
+	Magnet           *utils.Magnet          `json:"magnet"`
+	Arr              *arr.Arr               `json:"arr"`
+	Action           config.DownloadAction  `json:"action"`
+	DownloadUncached *bool                  `json:"downloadUncached"`
+	CallBackUrl      string                 `json:"callBackUrl"`
+	SkipMultiSeason  bool                   `json:"skip_multi_season"`
+	SeedingPolicy    *storage.SeedingPolicy `json:"seeding_policy,omitempty"`
 
 	Status      string    `json:"status"`
 	CompletedAt time.Time `json:"completedAt,omitempty"`
@@ -50,7 +51,7 @@ type ImportRequest struct {
 	Async bool       `json:"async"`
 }
 
-func NewTorrentRequest(debrid string, downloadFolder string, magnet *utils.Magnet, arr *arr.Arr, action config.DownloadAction, downloadUncached *bool, callBackUrl string, importType ImportType, skipMultiSeason bool) *ImportRequest {
+func NewTorrentRequest(debrid string, downloadFolder string, magnet *utils.Magnet, arr *arr.Arr, action config.DownloadAction, downloadUncached *bool, callBackUrl string, importType ImportType, skipMultiSeason bool, seedingPolicy *storage.SeedingPolicy) *ImportRequest {
 
 	return &ImportRequest{
 		Id:               uuid.New().String(),
@@ -64,6 +65,7 @@ func NewTorrentRequest(debrid string, downloadFolder string, magnet *utils.Magne
 		CallBackUrl:      callBackUrl,
 		Type:             importType,
 		SkipMultiSeason:  skipMultiSeason,
+		SeedingPolicy:    seedingPolicy,
 	}
 }
 

@@ -394,6 +394,10 @@ func (dl *DebridLink) DeleteTorrent(torrentId string) error {
 	return nil
 }
 
+func (dl *DebridLink) StopSeeding(torrentId string) error {
+	return fmt.Errorf("stop seeding is unsupported for provider %s", dl.config.Name)
+}
+
 func (dl *DebridLink) fetchDownloadLink(account *account.Account, id string, file *types.File) (types.DownloadLink, error) {
 	now := time.Now()
 	link := types.DownloadLink{

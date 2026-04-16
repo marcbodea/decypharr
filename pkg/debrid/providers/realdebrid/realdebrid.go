@@ -686,6 +686,10 @@ func (r *RealDebrid) DeleteTorrent(torrentId string) error {
 	return nil
 }
 
+func (r *RealDebrid) StopSeeding(torrentId string) error {
+	return fmt.Errorf("stop seeding is unsupported for provider %s", r.config.Name)
+}
+
 func (r *RealDebrid) GetFileDownloadLinks(t *types.Torrent) (map[string]types.DownloadLink, error) {
 	var wg sync.WaitGroup
 	var mu sync.Mutex

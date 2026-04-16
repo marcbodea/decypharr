@@ -2,6 +2,7 @@ package storage
 
 import (
 	"fmt"
+	"math"
 	"path"
 	"path/filepath"
 	"time"
@@ -16,6 +17,14 @@ type (
 	SwitcherStatus string
 	TorrentState   string
 )
+
+type SeedingPolicy struct {
+	StopOnRatio      *float64   `msgpack:"stop_on_ratio,omitempty" json:"stop_on_ratio,omitempty"`
+	StopAfterMinutes *int       `msgpack:"stop_after_minutes,omitempty" json:"stop_after_minutes,omitempty"`
+	StopRequestedAt  *time.Time `msgpack:"stop_requested_at,omitempty" json:"stop_requested_at,omitempty"`
+	StopCompletedAt  *time.Time `msgpack:"stop_completed_at,omitempty" json:"stop_completed_at,omitempty"`
+	LastStopError    string     `msgpack:"last_stop_error,omitempty" json:"last_stop_error,omitempty"`
+}
 
 const (
 	SwitcherStatusPending    SwitcherStatus = "pending"
@@ -89,9 +98,10 @@ type Entry struct {
 	SkipMultiSeason  bool                  `msgpack:"skip_multi_season,omitempty" json:"skip_multi_season,omitempty"` // Skip multi-season detection
 
 	// Error tracking
-	LastError     string     `msgpack:"last_error,omitempty" json:"last_error,omitempty"`           // Last error message
-	ErrorCount    int        `msgpack:"error_count,omitempty" json:"error_count,omitempty"`         // Number of errors
-	LastErrorTime *time.Time `msgpack:"last_error_time,omitempty" json:"last_error_time,omitempty"` // Last error time
+	LastError     string         `msgpack:"last_error,omitempty" json:"last_error,omitempty"`           // Last error message
+	ErrorCount    int            `msgpack:"error_count,omitempty" json:"error_count,omitempty"`         // Number of errors
+	LastErrorTime *time.Time     `msgpack:"last_error_time,omitempty" json:"last_error_time,omitempty"` // Last error time
+	SeedingPolicy *SeedingPolicy `msgpack:"seeding_policy,omitempty" json:"seeding_policy,omitempty"`
 }
 
 func (e *Entry) IsTorrent() bool {
@@ -112,6 +122,23 @@ func (e *Entry) Validate() error {
 		return fmt.Errorf("no files in active providerEntry")
 	}
 	return nil
+}
+
+// Sanitize replaces any non-finite float64 values with 0 so the entry can be
+// safely JSON-encoded. This guards against NaN/Inf produced by division-by-zero
+// when a debrid provider reports size=0 for an in-progress torrent.
+func (e *Entry) Sanitize() {
+	if math.IsNaN(e.Progress) || math.IsInf(e.Progress, 0) {
+		e.Progress = 0
+	}
+	for _, p := range e.Providers {
+		if math.IsNaN(p.Progress) || math.IsInf(p.Progress, 0) {
+			p.Progress = 0
+		}
+		if math.IsNaN(p.Ratio) || math.IsInf(p.Ratio, 0) {
+			p.Ratio = 0
+		}
+	}
 }
 
 // CanBeFixed checks if the entry can be repaired
@@ -199,6 +226,7 @@ type ProviderEntry struct {
 	RemovedAt *time.Time                `msgpack:"removed_at,omitempty" json:"removed_at,omitempty"` // When removed (if archived)
 	Status    debridTypes.TorrentStatus `msgpack:"status" json:"status"`                             // ProviderEntry status
 	Progress  float64                   `msgpack:"progress" json:"progress"`                         // Download progress on this debrid (0-100)
+	Ratio     float64                   `msgpack:"ratio,omitempty" json:"ratio,omitempty"`           // Current upload ratio reported by the provider
 
 	// Provider-specific file information
 	Files map[string]*ProviderFile `msgpack:"files" json:"files"` // filename -> debrid-specific file info
@@ -282,6 +310,7 @@ func (e *Entry) AddTorrentProvider(debridTorrent *debridTypes.Torrent) *Provider
 		ID:       debridTorrent.Id,
 		AddedAt:  time.Now(),
 		Status:   debridTorrent.Status,
+		Ratio:    debridTorrent.Ratio,
 		Files:    make(map[string]*ProviderFile),
 	}
 

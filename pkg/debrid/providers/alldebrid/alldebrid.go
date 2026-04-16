@@ -264,7 +264,9 @@ func (ad *AllDebrid) GetTorrent(torrentId string) (*types.Torrent, error) {
 		files := ad.flattenFiles(t.Id, data.Files, "", &index)
 		t.Files = files
 	} else {
-		t.Progress = float64(data.Downloaded) / float64(data.Size) * 100
+		if data.Size > 0 {
+			t.Progress = float64(data.Downloaded) / float64(data.Size) * 100
+		}
 		t.Speed = data.DownloadSpeed
 	}
 	return t, nil
@@ -302,7 +304,9 @@ func (ad *AllDebrid) UpdateTorrent(t *types.Torrent) error {
 		files := ad.flattenFiles(t.Id, data.Files, "", &index)
 		t.Files = files
 	} else {
-		t.Progress = float64(data.Downloaded) / float64(data.Size) * 100
+		if data.Size > 0 {
+			t.Progress = float64(data.Downloaded) / float64(data.Size) * 100
+		}
 		t.Speed = data.DownloadSpeed
 	}
 	return nil
@@ -344,6 +348,10 @@ func (ad *AllDebrid) DeleteTorrent(torrentId string) error {
 
 	ad.logger.Info().Msgf("Torrent %s deleted from AD", torrentId)
 	return nil
+}
+
+func (ad *AllDebrid) StopSeeding(torrentId string) error {
+	return fmt.Errorf("stop seeding is unsupported for provider %s", ad.config.Name)
 }
 
 func (ad *AllDebrid) fetchDownloadLink(account *account.Account, id string, file *types.File) (types.DownloadLink, error) {

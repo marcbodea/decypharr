@@ -225,6 +225,9 @@ func SetConfigPath(path string) {
 }
 
 func GetMainPath() string {
+	if configPath == "" {
+		return "."
+	}
 	return configPath
 }
 

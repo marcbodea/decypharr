@@ -28,6 +28,18 @@ func (m *Manager) ProviderClient(name string) debrid.Client {
 	return client
 }
 
+func (m *Manager) HasDebridProvider(provider string) bool {
+	found := false
+	m.clients.Range(func(_ string, client debrid.Client) bool {
+		if client != nil && client.Config().Provider == provider {
+			found = true
+			return false
+		}
+		return true
+	})
+	return found
+}
+
 func (m *Manager) initDebridClients() {
 	cfg := config.Get()
 	for _, dc := range cfg.Debrids {

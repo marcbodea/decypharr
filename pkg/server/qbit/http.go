@@ -435,6 +435,11 @@ func (q *QBit) handleTorrentsSetShareLimits(w http.ResponseWriter, r *http.Reque
 			continue
 		}
 
+		if q.releasePendingImport(hash, policy, "share_limits_received") {
+			updatedAny = true
+			continue
+		}
+
 		if torrent, err := q.manager.Queue().GetTorrent(hash); err == nil && torrent != nil {
 			torrent.SeedingPolicy = cloneQBitSeedingPolicy(policy)
 			torrent.UpdatedAt = updatedAt

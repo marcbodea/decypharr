@@ -1,8 +1,10 @@
 package qbit
 
 import (
+	"fmt"
 	"net/http"
 	"path/filepath"
+	"strconv"
 	"strings"
 
 	"github.com/sirrobot01/decypharr/internal/config"
@@ -10,6 +12,46 @@ import (
 	"github.com/sirrobot01/decypharr/pkg/arr"
 	"github.com/sirrobot01/decypharr/pkg/storage"
 )
+
+func parseSeedingPolicy(r *http.Request) (*storage.SeedingPolicy, error) {
+	var policy storage.SeedingPolicy
+
+	if value := strings.TrimSpace(r.FormValue("ratioLimit")); value != "" {
+		ratio, err := strconv.ParseFloat(value, 64)
+		if err != nil {
+			return nil, fmt.Errorf("invalid ratioLimit value %q", value)
+		}
+		switch {
+		case ratio >= 0:
+			policy.StopOnRatio = &ratio
+		case ratio == -1 || ratio == -2:
+			// qBittorrent uses -1 for no limit and -2 for global limit.
+		default:
+			return nil, fmt.Errorf("invalid ratioLimit value %q", value)
+		}
+	}
+
+	if value := strings.TrimSpace(r.FormValue("seedingTimeLimit")); value != "" {
+		minutes, err := strconv.Atoi(value)
+		if err != nil {
+			return nil, fmt.Errorf("invalid seedingTimeLimit value %q", value)
+		}
+		switch {
+		case minutes >= 0:
+			policy.StopAfterMinutes = &minutes
+		case minutes == -1 || minutes == -2:
+			// qBittorrent uses -1 for no limit and -2 for global limit.
+		default:
+			return nil, fmt.Errorf("invalid seedingTimeLimit value %q", value)
+		}
+	}
+
+	if policy.StopOnRatio == nil && policy.StopAfterMinutes == nil {
+		return nil, nil
+	}
+
+	return &policy, nil
+}
 
 func (q *QBit) handleLogin(w http.ResponseWriter, r *http.Request) {
 	ctx := r.Context()
@@ -119,6 +161,12 @@ func (q *QBit) handleTorrentsAdd(w http.ResponseWriter, r *http.Request) {
 
 	debridName := r.FormValue("debrid")
 	category := r.FormValue("category")
+	seedingPolicy, err := parseSeedingPolicy(r)
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusBadRequest)
+		return
+	}
+
 	_arr := getArrFromContext(ctx)
 	if _arr == nil {
 		// Arr is not in context
@@ -133,7 +181,7 @@ func (q *QBit) handleTorrentsAdd(w http.ResponseWriter, r *http.Request) {
 			urlList = append(urlList, strings.TrimSpace(u))
 		}
 		for _, url := range urlList {
-			if err := q.addMagnet(ctx, url, _arr, debridName, action, cfg.CallbackURL, rmTrackerUrls, cfg.SkipMultiSeason); err != nil {
+			if err := q.addMagnet(ctx, url, _arr, debridName, action, cfg.CallbackURL, rmTrackerUrls, cfg.SkipMultiSeason, seedingPolicy); err != nil {
 				q.logger.Debug().Msgf("Error adding magnet: %s", err.Error())
 				http.Error(w, err.Error(), http.StatusBadRequest)
 				return
@@ -146,7 +194,7 @@ func (q *QBit) handleTorrentsAdd(w http.ResponseWriter, r *http.Request) {
 	if r.MultipartForm != nil && r.MultipartForm.File != nil {
 		if files := r.MultipartForm.File["torrents"]; len(files) > 0 {
 			for _, fileHeader := range files {
-				if err := q.addTorrent(ctx, fileHeader, _arr, debridName, action, cfg.CallbackURL, rmTrackerUrls, cfg.SkipMultiSeason); err != nil {
+				if err := q.addTorrent(ctx, fileHeader, _arr, debridName, action, cfg.CallbackURL, rmTrackerUrls, cfg.SkipMultiSeason, seedingPolicy); err != nil {
 					q.logger.Debug().Err(err).Msgf("Error adding torrent")
 					http.Error(w, err.Error(), http.StatusBadRequest)
 					return

@@ -69,6 +69,73 @@ func protoToProviderFile(pb *ProviderFileProto) *ProviderFile {
 }
 
 // ============================================================================
+// SeedingPolicy Conversions
+// ============================================================================
+
+func seedingPolicyToProto(sp *SeedingPolicy) *SeedingPolicyProto {
+	if sp == nil {
+		return nil
+	}
+
+	pb := &SeedingPolicyProto{
+		LastStopError: sp.LastStopError,
+	}
+	if sp.StopOnRatio != nil {
+		pb.HasStopOnRatio = true
+		pb.StopOnRatio = *sp.StopOnRatio
+	}
+	if sp.StopAfterMinutes != nil {
+		pb.HasStopAfterMinutes = true
+		pb.StopAfterMinutes = int32(*sp.StopAfterMinutes)
+	}
+	if sp.StopRequestedAt != nil {
+		pb.HasStopRequestedAt = true
+		pb.StopRequestedAtUnix = sp.StopRequestedAt.Unix()
+	}
+	if sp.StopCompletedAt != nil {
+		pb.HasStopCompletedAt = true
+		pb.StopCompletedAtUnix = sp.StopCompletedAt.Unix()
+	}
+	return pb
+}
+
+func protoToSeedingPolicy(pb *SeedingPolicyProto) *SeedingPolicy {
+	if pb == nil {
+		return nil
+	}
+
+	sp := &SeedingPolicy{
+		LastStopError: pb.LastStopError,
+	}
+	if pb.HasStopOnRatio {
+		ratio := pb.StopOnRatio
+		sp.StopOnRatio = &ratio
+	}
+	if pb.HasStopAfterMinutes {
+		minutes := int(pb.StopAfterMinutes)
+		sp.StopAfterMinutes = &minutes
+	}
+	if pb.HasStopRequestedAt {
+		t := time.Unix(pb.StopRequestedAtUnix, 0)
+		sp.StopRequestedAt = &t
+	}
+	if pb.HasStopCompletedAt {
+		t := time.Unix(pb.StopCompletedAtUnix, 0)
+		sp.StopCompletedAt = &t
+	}
+
+	if sp.StopOnRatio == nil &&
+		sp.StopAfterMinutes == nil &&
+		sp.StopRequestedAt == nil &&
+		sp.StopCompletedAt == nil &&
+		sp.LastStopError == "" {
+		return nil
+	}
+
+	return sp
+}
+
+// ============================================================================
 // ProviderEntry Conversions
 // ============================================================================
 
@@ -78,6 +145,7 @@ func providerEntryToProto(pe *ProviderEntry) *ProviderEntryProto {
 		Id:       pe.ID,
 		Status:   string(pe.Status),
 		Progress: pe.Progress,
+		Ratio:    pe.Ratio,
 		Files:    make(map[string]*ProviderFileProto),
 	}
 	if !pe.AddedAt.IsZero() {
@@ -103,6 +171,7 @@ func protoToProviderEntry(pb *ProviderEntryProto) *ProviderEntry {
 		ID:       pb.Id,
 		Status:   debridTypes.TorrentStatus(pb.Status),
 		Progress: pb.Progress,
+		Ratio:    pb.Ratio,
 		Files:    make(map[string]*ProviderFile),
 	}
 	if pb.AddedAtUnix != 0 {
@@ -158,6 +227,7 @@ func EntryToProto(e *Entry) *EntryProto {
 		SkipMultiSeason:  e.SkipMultiSeason,
 		LastError:        e.LastError,
 		ErrorCount:       int32(e.ErrorCount),
+		SeedingPolicy:    seedingPolicyToProto(e.SeedingPolicy),
 	}
 
 	// Timestamps
@@ -226,6 +296,7 @@ func ProtoToEntry(pb *EntryProto) *Entry {
 		SkipMultiSeason:  pb.SkipMultiSeason,
 		LastError:        pb.LastError,
 		ErrorCount:       int(pb.ErrorCount),
+		SeedingPolicy:    protoToSeedingPolicy(pb.SeedingPolicy),
 	}
 
 	// Timestamps

@@ -70,6 +70,7 @@ func (m *Manager) AddNewTorrent(ctx context.Context, importReq *ImportRequest) e
 		DownloadUncached: debridTorrent.DownloadUncached,
 		CallbackURL:      importReq.CallBackUrl,
 		SkipMultiSeason:  importReq.SkipMultiSeason,
+		SeedingPolicy:    importReq.SeedingPolicy,
 		CreatedAt:        time.Now(),
 		UpdatedAt:        time.Now(),
 		AddedOn:          time.Now(),
@@ -233,6 +234,7 @@ func (m *Manager) processQueuedTorrent(entry *storage.Entry) {
 	// Update placement progress
 	if placement := entry.GetActiveProvider(); placement != nil {
 		placement.Progress = entry.Progress
+		placement.Ratio = debridTorrent.Ratio
 	}
 
 	_ = m.queue.Update(entry)

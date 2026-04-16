@@ -24,6 +24,7 @@ type Torrent struct {
 	Progress         float64         `json:"progress"`
 	Speed            int64           `json:"speed"`
 	Seeders          int             `json:"seeders"`
+	Ratio            float64         `json:"ratio"`
 	Links            []string        `json:"links"`
 	DeletedFiles     []string        `json:"deleted_files"`
 
@@ -68,6 +69,7 @@ func (t *Torrent) Copy() *Torrent {
 		Progress:         t.Progress,
 		Speed:            t.Speed,
 		Seeders:          t.Seeders,
+		Ratio:            t.Ratio,
 		Links:            append([]string{}, t.Links...),
 		Debrid:           t.Debrid,
 		Arr:              t.Arr,

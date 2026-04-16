@@ -350,6 +350,10 @@ func (ad *AllDebrid) DeleteTorrent(torrentId string) error {
 	return nil
 }
 
+func (ad *AllDebrid) StopSeeding(torrentId string) error {
+	return fmt.Errorf("stop seeding is unsupported for provider %s", ad.config.Name)
+}
+
 func (ad *AllDebrid) fetchDownloadLink(account *account.Account, id string, file *types.File) (types.DownloadLink, error) {
 	var data DownloadLink
 

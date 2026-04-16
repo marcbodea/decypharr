@@ -15,13 +15,13 @@ import (
 )
 
 // All torrent-related helpers goes here
-func (q *QBit) addMagnet(ctx context.Context, url string, arr *arr.Arr, debrid string, action config.DownloadAction, callbackURL string, rmTrackerUrls, skipMultiSeason bool) error {
+func (q *QBit) addMagnet(ctx context.Context, url string, arr *arr.Arr, debrid string, action config.DownloadAction, callbackURL string, rmTrackerUrls, skipMultiSeason bool, seedingPolicy *storage.SeedingPolicy) error {
 	magnet, err := utils.GetMagnetFromUrl(url, rmTrackerUrls)
 	if err != nil {
 		return fmt.Errorf("error parsing magnet link: %w", err)
 	}
 
-	importReq := manager.NewTorrentRequest(debrid, q.downloadFolder, magnet, arr, action, arr.DownloadUncached, callbackURL, manager.ImportTypeQBit, skipMultiSeason)
+	importReq := manager.NewTorrentRequest(debrid, q.downloadFolder, magnet, arr, action, arr.DownloadUncached, callbackURL, manager.ImportTypeQBit, skipMultiSeason, seedingPolicy)
 
 	err = q.manager.AddNewTorrent(ctx, importReq)
 	if err != nil {
@@ -30,7 +30,7 @@ func (q *QBit) addMagnet(ctx context.Context, url string, arr *arr.Arr, debrid s
 	return nil
 }
 
-func (q *QBit) addTorrent(ctx context.Context, fileHeader *multipart.FileHeader, arr *arr.Arr, debrid string, action config.DownloadAction, callbackURL string, rmTrackerUrls, skipMultiSeason bool) error {
+func (q *QBit) addTorrent(ctx context.Context, fileHeader *multipart.FileHeader, arr *arr.Arr, debrid string, action config.DownloadAction, callbackURL string, rmTrackerUrls, skipMultiSeason bool, seedingPolicy *storage.SeedingPolicy) error {
 	file, _ := fileHeader.Open()
 	defer file.Close()
 	var reader io.Reader = file
@@ -38,7 +38,7 @@ func (q *QBit) addTorrent(ctx context.Context, fileHeader *multipart.FileHeader,
 	if err != nil {
 		return fmt.Errorf("error reading file: %s \n %w", fileHeader.Filename, err)
 	}
-	importReq := manager.NewTorrentRequest(debrid, q.downloadFolder, magnet, arr, action, arr.DownloadUncached, callbackURL, manager.ImportTypeQBit, skipMultiSeason)
+	importReq := manager.NewTorrentRequest(debrid, q.downloadFolder, magnet, arr, action, arr.DownloadUncached, callbackURL, manager.ImportTypeQBit, skipMultiSeason, seedingPolicy)
 	err = q.manager.AddNewTorrent(ctx, importReq)
 	if err != nil {
 		return fmt.Errorf("failed to process torrent: %w", err)

@@ -14,6 +14,7 @@ type Client interface {
 	CheckStatus(tr *types.Torrent) (*types.Torrent, error)
 	GetDownloadLink(torrentID string, file *types.File) (types.DownloadLink, error)
 	DeleteTorrent(torrentId string) error
+	StopSeeding(torrentId string) error
 	IsAvailable(infohashes []string) map[string]bool
 	UpdateTorrent(torrent *types.Torrent) error
 	GetTorrent(torrentId string) (*types.Torrent, error)

@@ -35,7 +35,6 @@ func (m *Manager) syncTorrents(ctx context.Context) {
 		Msg("Initial sync of torrents from debrid clients completed")
 }
 
-
 // Refresh configuration constants
 const (
 	refreshBatchSize       = 500
@@ -395,6 +394,7 @@ func (m *Manager) processSyncTorrent(t *types.Torrent) (*storage.Entry, error) {
 	// AddOrUpdate or update placement
 	placement := mt.AddTorrentProvider(t)
 	placement.Progress = t.Progress
+	placement.Ratio = t.Ratio
 	if t.Status == types.TorrentStatusDownloaded {
 		downloadedAt := addedOn
 		placement.DownloadedAt = &downloadedAt
@@ -485,4 +485,3 @@ func isComplete(files map[string]types.File) bool {
 	}
 	return true
 }
-

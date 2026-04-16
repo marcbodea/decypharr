@@ -186,6 +186,37 @@ func (tb *Torbox) doDelete(endpoint string, payload interface{}) (*http.Response
 	return resp, nil
 }
 
+func (tb *Torbox) doPostJSON(endpoint string, payload interface{}, result interface{}) (*http.Response, error) {
+	var body io.Reader
+	if payload != nil {
+		data, err := json.Marshal(payload)
+		if err != nil {
+			return nil, err
+		}
+		body = bytes.NewReader(data)
+	}
+
+	req, err := http.NewRequest(http.MethodPost, tb.Host+endpoint, body)
+	if err != nil {
+		return nil, err
+	}
+	req.Header.Set("Content-Type", "application/json")
+
+	resp, err := tb.client.Do(req)
+	if err != nil {
+		return nil, err
+	}
+	defer resp.Body.Close()
+
+	if result != nil && resp.ContentLength != 0 {
+		if err := json.ConfigDefault.NewDecoder(resp.Body).Decode(result); err != nil && resp.StatusCode >= 200 && resp.StatusCode < 300 {
+			return resp, err
+		}
+	}
+
+	return resp, nil
+}
+
 func (tb *Torbox) IsAvailable(hashes []string) map[string]bool {
 	result := make(map[string]bool)
 
@@ -307,6 +338,7 @@ func (tb *Torbox) GetTorrent(torrentId string) (*types.Torrent, error) {
 		Status:           tb.getTorboxStatus(data.DownloadState, data.DownloadFinished),
 		Speed:            data.DownloadSpeed,
 		Seeders:          data.Seeds,
+		Ratio:            data.Ratio,
 		Filename:         data.Name,
 		OriginalFilename: data.Name,
 		Debrid:           tb.config.Name,
@@ -368,6 +400,7 @@ func (tb *Torbox) UpdateTorrent(t *types.Torrent) error {
 	t.Status = tb.getTorboxStatus(data.DownloadState, data.DownloadFinished)
 	t.Speed = data.DownloadSpeed
 	t.Seeders = data.Seeds
+	t.Ratio = data.Ratio
 	t.Filename = name
 	t.OriginalFilename = name
 	if data.Hash != "" {
@@ -452,6 +485,29 @@ func (tb *Torbox) DeleteTorrent(torrentId string) error {
 	return nil
 }
 
+func (tb *Torbox) StopSeeding(torrentId string) error {
+	payload := map[string]any{
+		"torrent_id": torrentId,
+		"operation":  "stop_seeding",
+	}
+
+	var res APIResponse[any]
+	resp, err := tb.doPostJSON("/api/torrents/controltorrent", payload, &res)
+	if err != nil {
+		return err
+	}
+
+	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
+		if res.Detail != "" || res.Error != nil {
+			return fmt.Errorf("torbox API error: Status: %d, Error: %v, Detail: %s", resp.StatusCode, res.Error, res.Detail)
+		}
+		return fmt.Errorf("torbox API error: Status: %d", resp.StatusCode)
+	}
+
+	tb.logger.Info().Msgf("Torrent %s stopped seeding on Torbox", torrentId)
+	return nil
+}
+
 func (tb *Torbox) GetDownloadLink(id string, file *types.File) (types.DownloadLink, error) {
 	return tb.accountsManager.GetDownloadLink(id, file, tb.fetchDownloadLink)
 }
@@ -528,6 +584,7 @@ func (tb *Torbox) getTorrents(offset int) ([]*types.Torrent, error) {
 			Status:           tb.getTorboxStatus(data.DownloadState, data.DownloadFinished),
 			Speed:            data.DownloadSpeed,
 			Seeders:          data.Seeds,
+			Ratio:            data.Ratio,
 			Filename:         data.Name,
 			OriginalFilename: data.Name,
 			Debrid:           tb.config.Name,

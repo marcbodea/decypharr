@@ -98,6 +98,9 @@
                             <i class="bi bi-cloud mr-2"></i>Provider
                         </th>
                         <th class="font-semibold">
+                            <i class="bi bi-stopwatch mr-2"></i>Seeding
+                        </th>
+                        <th class="font-semibold">
                             <i class="bi bi-people mr-2"></i>Seeders
                         </th>
                         <th class="font-semibold">
@@ -133,6 +136,113 @@
         </div>
     </div>
 </div>
+
+<dialog class="modal" id="seedingPolicyModal">
+    <div class="modal-box max-w-3xl">
+        <form method="dialog">
+            <button class="btn btn-sm btn-circle btn-ghost absolute right-2 top-2">✕</button>
+        </form>
+
+        <div class="space-y-6">
+            <div>
+                <h3 class="text-xl font-semibold">Seeding Policy</h3>
+                <p class="text-sm text-base-content/70 mt-1">Review and edit the per-torrent TorBox seeding limits.</p>
+            </div>
+
+            <div class="space-y-1">
+                <div class="font-medium break-all" id="seedingPolicyTorrentName">Loading...</div>
+                <div class="text-xs text-base-content/60 font-mono" id="seedingPolicyTorrentHash"></div>
+            </div>
+
+            <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+                <div class="card bg-base-200">
+                    <div class="card-body p-4 space-y-2">
+                        <h4 class="font-semibold text-sm uppercase tracking-wide text-base-content/70">Current State</h4>
+                        <div class="text-sm flex justify-between gap-4">
+                            <span class="text-base-content/70">Provider</span>
+                            <span id="seedingPolicyProvider">-</span>
+                        </div>
+                        <div class="text-sm flex justify-between gap-4">
+                            <span class="text-base-content/70">Seed Start</span>
+                            <span id="seedingPolicySeedStart">-</span>
+                        </div>
+                        <div class="text-sm flex justify-between gap-4">
+                            <span class="text-base-content/70">Seed Time</span>
+                            <span id="seedingPolicyElapsed">-</span>
+                        </div>
+                        <div class="text-sm flex justify-between gap-4">
+                            <span class="text-base-content/70">Current Ratio</span>
+                            <span id="seedingPolicyCurrentRatio">-</span>
+                        </div>
+                    </div>
+                </div>
+
+                <div class="card bg-base-200">
+                    <div class="card-body p-4 space-y-2">
+                        <h4 class="font-semibold text-sm uppercase tracking-wide text-base-content/70">Worker Status</h4>
+                        <div class="text-sm flex justify-between gap-4">
+                            <span class="text-base-content/70">Stop Requested</span>
+                            <span id="seedingPolicyStopRequested">-</span>
+                        </div>
+                        <div class="text-sm flex justify-between gap-4">
+                            <span class="text-base-content/70">Stop Completed</span>
+                            <span id="seedingPolicyStopCompleted">-</span>
+                        </div>
+                        <div class="text-sm flex justify-between gap-4">
+                            <span class="text-base-content/70">Last Error</span>
+                            <span class="text-right break-all" id="seedingPolicyLastError">-</span>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <div class="alert alert-info">
+                <i class="bi bi-info-circle"></i>
+                <span>Leave a field empty to disable that limit. Saving resets any previous stop request/completion state for this torrent.</span>
+            </div>
+
+            <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+                <label class="form-control">
+                    <div class="label">
+                        <span class="label-text font-medium">Ratio Limit</span>
+                    </div>
+                    <input type="number" min="0" step="0.01" class="input input-bordered" id="seedingRatioLimitInput" placeholder="e.g. 1.50">
+                    <div class="label">
+                        <span class="label-text-alt">Current ratio versus configured ratio stop target.</span>
+                    </div>
+                </label>
+
+                <label class="form-control">
+                    <div class="label">
+                        <span class="label-text font-medium">Seeding Time Limit</span>
+                    </div>
+                    <input type="number" min="0" step="1" class="input input-bordered" id="seedingTimeLimitInput" placeholder="Minutes">
+                    <div class="label">
+                        <span class="label-text-alt">Minutes to seed after TorBox marks the torrent as downloaded.</span>
+                    </div>
+                </label>
+            </div>
+
+            <div class="flex flex-col-reverse sm:flex-row sm:justify-between gap-3">
+                <button class="btn btn-ghost" id="clearSeedingPolicyBtn" type="button">
+                    <i class="bi bi-eraser mr-2"></i>Clear Limits
+                </button>
+
+                <div class="flex gap-2 justify-end">
+                    <form method="dialog">
+                        <button class="btn btn-ghost" type="submit">Close</button>
+                    </form>
+                    <button class="btn btn-primary" id="saveSeedingPolicyBtn" type="button">
+                        <i class="bi bi-save mr-2"></i>Save Policy
+                    </button>
+                </div>
+            </div>
+        </div>
+    </div>
+    <form method="dialog" class="modal-backdrop">
+        <button>close</button>
+    </form>
+</dialog>
 
 <ul class="menu bg-base-100 shadow-lg rounded-box context-menu hidden fixed z-50" id="torrentContextMenu">
     <li class="menu-title">

@@ -2,7 +2,9 @@ package qbit
 
 import (
 	"fmt"
+	"mime/multipart"
 	"net/http"
+	"net/textproto"
 	"path/filepath"
 	"sort"
 	"strconv"
@@ -86,6 +88,82 @@ func cloneQBitSeedingPolicy(policy *storage.SeedingPolicy) *storage.SeedingPolic
 		cloned.StopCompletedAt = &completedAt
 	}
 	return cloned
+}
+
+func redactHeaderMap(headers map[string][]string) map[string][]string {
+	if len(headers) == 0 {
+		return nil
+	}
+
+	redacted := make(map[string][]string, len(headers))
+	for key, values := range headers {
+		lowerKey := strings.ToLower(key)
+		if lowerKey == "authorization" || lowerKey == "cookie" || lowerKey == "set-cookie" {
+			redacted[key] = []string{"[REDACTED]"}
+			continue
+		}
+		redacted[key] = append([]string(nil), values...)
+	}
+	return redacted
+}
+
+func redactHeaders(headers http.Header) map[string][]string {
+	return redactHeaderMap(map[string][]string(headers))
+}
+
+func cloneValues(values map[string][]string) map[string][]string {
+	if len(values) == 0 {
+		return nil
+	}
+
+	cloned := make(map[string][]string, len(values))
+	for key, vals := range values {
+		cloned[key] = append([]string(nil), vals...)
+	}
+	return cloned
+}
+
+func summarizeMultipartFiles(files map[string][]*multipart.FileHeader) map[string][]map[string]any {
+	if len(files) == 0 {
+		return nil
+	}
+
+	summary := make(map[string][]map[string]any, len(files))
+	for field, headers := range files {
+		items := make([]map[string]any, 0, len(headers))
+		for _, header := range headers {
+			items = append(items, map[string]any{
+				"filename": header.Filename,
+				"size":     header.Size,
+				"headers":  redactHeaderMap(map[string][]string(textproto.MIMEHeader(header.Header))),
+			})
+		}
+		summary[field] = items
+	}
+	return summary
+}
+
+func (q *QBit) logIncomingRequest(r *http.Request, endpoint string) {
+	logEvent := q.logger.Debug().
+		Str("endpoint", endpoint).
+		Str("method", r.Method).
+		Str("path", r.URL.Path).
+		Str("raw_query", r.URL.RawQuery).
+		Str("content_type", r.Header.Get("Content-Type")).
+		Str("remote_addr", r.RemoteAddr).
+		Interface("headers", redactHeaders(r.Header))
+
+	if len(r.Form) > 0 {
+		logEvent = logEvent.Interface("form", cloneValues(r.Form))
+	}
+	if len(r.PostForm) > 0 {
+		logEvent = logEvent.Interface("post_form", cloneValues(r.PostForm))
+	}
+	if r.MultipartForm != nil && len(r.MultipartForm.File) > 0 {
+		logEvent = logEvent.Interface("multipart_files", summarizeMultipartFiles(r.MultipartForm.File))
+	}
+
+	logEvent.Msg("Received qBittorrent-compatible request")
 }
 
 func (q *QBit) handleLogin(w http.ResponseWriter, r *http.Request) {
@@ -185,6 +263,7 @@ func (q *QBit) handleTorrentsAdd(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "Invalid content type", http.StatusBadRequest)
 		return
 	}
+	q.logIncomingRequest(r, "torrents/add")
 
 	cfg := config.Get()
 	action := cfg.DefaultDownloadAction
@@ -303,6 +382,7 @@ func (q *QBit) handleTorrentsSetShareLimits(w http.ResponseWriter, r *http.Reque
 		http.Error(w, err.Error(), http.StatusBadRequest)
 		return
 	}
+	q.logIncomingRequest(r, "torrents/setShareLimits")
 
 	ctx := r.Context()
 	hashes := getHashes(ctx)

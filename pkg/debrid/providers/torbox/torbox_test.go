@@ -2,13 +2,17 @@ package torbox
 
 import (
 	"encoding/json"
+	"io"
 	"net/http"
 	"net/http/httptest"
+	"net/url"
 	"testing"
 
 	"github.com/rs/zerolog"
 	"github.com/sirrobot01/decypharr/internal/config"
 	"github.com/sirrobot01/decypharr/internal/request"
+	"github.com/sirrobot01/decypharr/internal/utils"
+	debridTypes "github.com/sirrobot01/decypharr/pkg/debrid/types"
 )
 
 func TestStopSeeding(t *testing.T) {
@@ -69,5 +73,43 @@ func TestStopSeedingReturnsAPIError(t *testing.T) {
 
 	if err := tb.StopSeeding("123"); err == nil {
 		t.Fatal("expected error")
+	}
+}
+
+func TestSubmitMagnetRequestsSeedingWhenPolicyIsSet(t *testing.T) {
+	var gotForm url.Values
+
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		body, err := io.ReadAll(r.Body)
+		if err != nil {
+			t.Fatalf("failed to read request body: %v", err)
+		}
+		gotForm, err = url.ParseQuery(string(body))
+		if err != nil {
+			t.Fatalf("failed to parse form body: %v", err)
+		}
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(`{"success":true,"error":null,"detail":"ok","data":{"torrent_id":123,"hash":"abc"}}`))
+	}))
+	defer server.Close()
+
+	tb := &Torbox{
+		Host:   server.URL,
+		client: request.New(),
+		logger: zerolog.Nop(),
+		config: config.Debrid{Name: "torbox", Provider: "torbox"},
+	}
+
+	torrent := &debridTypes.Torrent{
+		Magnet:         &utils.Magnet{Link: "magnet:?xt=urn:btih:abc"},
+		RequestSeeding: true,
+	}
+
+	if _, err := tb.SubmitMagnet(torrent); err != nil {
+		t.Fatalf("SubmitMagnet returned error: %v", err)
+	}
+
+	if gotForm.Get("seed") != "2" {
+		t.Fatalf("unexpected seed form value: %q", gotForm.Get("seed"))
 	}
 }

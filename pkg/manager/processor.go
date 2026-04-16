@@ -327,12 +327,13 @@ func (m *Manager) processNewTorrent(torrent *storage.Entry, debridTorrent *debri
 // SendToDebrid submits a magnet to debrid service(s) - replaces debrid.Parse
 func (m *Manager) SendToDebrid(ctx context.Context, importRequest *ImportRequest) (*debridTypes.Torrent, error) {
 	debridTorrent := &debridTypes.Torrent{
-		InfoHash: importRequest.Magnet.InfoHash,
-		Magnet:   importRequest.Magnet,
-		Name:     importRequest.Magnet.Name,
-		Arr:      importRequest.Arr,
-		Size:     importRequest.Magnet.Size,
-		Files:    make(map[string]debridTypes.File),
+		InfoHash:       importRequest.Magnet.InfoHash,
+		Magnet:         importRequest.Magnet,
+		Name:           importRequest.Magnet.Name,
+		Arr:            importRequest.Arr,
+		Size:           importRequest.Magnet.Size,
+		Files:          make(map[string]debridTypes.File),
+		RequestSeeding: importRequest.SeedingPolicy != nil,
 	}
 
 	clients := m.FilterDebrid(func(c common.Client) bool {
@@ -366,6 +367,21 @@ func (m *Manager) SendToDebrid(ctx context.Context, importRequest *ImportRequest
 			Str("Name", debridTorrent.Name).
 			Str("Action", string(importRequest.Action)).
 			Msg("Processing torrent")
+		policyLog := _logger.Debug().
+			Str("provider", db.Config().Name).
+			Str("hash", debridTorrent.InfoHash).
+			Bool("request_seeding", debridTorrent.RequestSeeding)
+		if importRequest.SeedingPolicy != nil {
+			if importRequest.SeedingPolicy.StopOnRatio != nil {
+				policyLog = policyLog.Float64("ratio_limit", *importRequest.SeedingPolicy.StopOnRatio)
+			}
+			if importRequest.SeedingPolicy.StopAfterMinutes != nil {
+				policyLog = policyLog.Int("seeding_time_limit_minutes", *importRequest.SeedingPolicy.StopAfterMinutes)
+			}
+			policyLog.Msg("Submitting torrent with per-torrent seeding policy")
+		} else {
+			policyLog.Msg("Submitting torrent without per-torrent seeding policy")
+		}
 
 		if !debridTorrent.DownloadUncached && db.SupportsAvailabilityCheck() && debridTorrent.InfoHash != "" {
 			if !isHashAvailable(db, debridTorrent.InfoHash) {
@@ -379,6 +395,11 @@ func (m *Manager) SendToDebrid(ctx context.Context, importRequest *ImportRequest
 
 		dbt, err := db.SubmitMagnet(debridTorrent)
 		if err != nil || dbt == nil || dbt.Id == "" {
+			_logger.Debug().
+				Err(err).
+				Str("hash", debridTorrent.InfoHash).
+				Bool("request_seeding", debridTorrent.RequestSeeding).
+				Msg("Debrid submit failed")
 			errs = append(errs, err)
 			continue
 		}

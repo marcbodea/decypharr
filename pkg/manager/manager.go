@@ -8,6 +8,7 @@ import (
 	"net/http"
 	"os"
 	"path/filepath"
+	"strings"
 	"sync"
 	"time"
 
@@ -65,10 +66,10 @@ type Manager struct {
 	startTime     time.Time
 	usenetTimeout time.Duration
 
-	rootInfo       *FileInfo
-	entry          *EntryCache
-	downloader     *Downloader
-	usenet         *usenet.Usenet
+	rootInfo   *FileInfo
+	entry      *EntryCache
+	downloader *Downloader
+	usenet     *usenet.Usenet
 
 	// Debrid speed test results storage
 	debridSpeedTestResults *xsync.Map[string, debridTypes.SpeedTestResult]
@@ -110,16 +111,16 @@ func New() *Manager {
 			MinVersion:         tls.VersionTLS12,
 			ClientSessionCache: tls.NewLRUClientSessionCache(200),
 		},
-		TLSHandshakeTimeout:   20 * time.Second,
-		MaxIdleConns:          1000,
-		MaxIdleConnsPerHost:   500,
-		MaxConnsPerHost:       500,
-		IdleConnTimeout:       120 * time.Second,
-		DisableCompression:    false, // Enable compression for better multiplexing
-		DialContext:           dialer.DialContext,
-		Proxy:                 http.ProxyFromEnvironment,
-		ForceAttemptHTTP2:     true, // Enable HTTP/2 for multiplexing
-		MaxResponseHeaderBytes: 1 << 20, // 1MB header buffer for CDN responses
+		TLSHandshakeTimeout:    20 * time.Second,
+		MaxIdleConns:           1000,
+		MaxIdleConnsPerHost:    500,
+		MaxConnsPerHost:        500,
+		IdleConnTimeout:        120 * time.Second,
+		DisableCompression:     false, // Enable compression for better multiplexing
+		DialContext:            dialer.DialContext,
+		Proxy:                  http.ProxyFromEnvironment,
+		ForceAttemptHTTP2:      true,     // Enable HTTP/2 for multiplexing
+		MaxResponseHeaderBytes: 1 << 20,  // 1MB header buffer for CDN responses
 		WriteBufferSize:        32 << 10, // 32KB write buffer
 		ReadBufferSize:         32 << 10, // 32KB read buffer
 	}
@@ -554,6 +555,50 @@ func (m *Manager) GetTorrents(filter func(*storage.Entry) bool) ([]*storage.Entr
 		return nil
 	})
 	return torrents, err
+}
+
+// ListVisibleEntries returns the deduplicated union of queued and persisted
+// entries so UI surfaces keep showing torrents after they are persisted out of
+// the active queue.
+func (m *Manager) ListVisibleEntries(category string, protocol config.Protocol, state storage.TorrentState, hashes []string) ([]*storage.Entry, error) {
+	filter := m.queue.ListFilterFunc(category, protocol, state, hashes)
+
+	persisted, err := m.storage.List(filter)
+	if err != nil {
+		return nil, err
+	}
+
+	queued, err := m.storage.FilterQueued(filter)
+	if err != nil {
+		return nil, err
+	}
+
+	merged := make(map[string]*storage.Entry, len(persisted)+len(queued))
+	for _, entry := range persisted {
+		if entry == nil {
+			continue
+		}
+		merged[strings.ToLower(entry.InfoHash)] = entry
+	}
+
+	for _, entry := range queued {
+		if entry == nil {
+			continue
+		}
+
+		key := strings.ToLower(entry.InfoHash)
+		existing, exists := merged[key]
+		if !exists || !existing.UpdatedAt.After(entry.UpdatedAt) {
+			merged[key] = entry
+		}
+	}
+
+	entries := make([]*storage.Entry, 0, len(merged))
+	for _, entry := range merged {
+		entries = append(entries, entry)
+	}
+
+	return entries, nil
 }
 
 func (m *Manager) GetTorrentsCount() (int, error) {

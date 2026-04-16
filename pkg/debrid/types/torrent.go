@@ -34,6 +34,7 @@ type Torrent struct {
 
 	SizeDownloaded   int64 `json:"-"` // This is used for local download
 	DownloadUncached bool  `json:"-"`
+	RequestSeeding   bool  `json:"-"`
 
 	sync.Mutex
 }

@@ -266,6 +266,15 @@ func (tb *Torbox) SubmitMagnet(torrent *types.Torrent) (*types.Torrent, error) {
 	if !torrent.DownloadUncached {
 		formData["add_only_if_cached"] = "true"
 	}
+	if torrent.RequestSeeding {
+		formData["seed"] = "2"
+	}
+	tb.logger.Debug().
+		Str("hash", torrent.InfoHash).
+		Bool("request_seeding", torrent.RequestSeeding).
+		Str("seed_mode", formData["seed"]).
+		Bool("add_only_if_cached", formData["add_only_if_cached"] == "true").
+		Msg("Submitting Torbox create torrent request")
 
 	resp, err := tb.doPostForm("/api/torrents/createtorrent", formData, &data)
 	if err != nil {

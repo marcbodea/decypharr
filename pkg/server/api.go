@@ -322,8 +322,13 @@ func (s *Server) handleGetTorrents(w http.ResponseWriter, r *http.Request) {
 		sortOrder = "desc"
 	}
 
-	// GetReader all torrents
-	allTorrents := s.manager.Queue().ListFilter("", config.ProtocolAll, "", nil, "added_on", false)
+	// Get all visible torrents across queued and persisted storage.
+	allTorrents, err := s.manager.ListVisibleEntries("", config.ProtocolAll, "", nil)
+	if err != nil {
+		s.logger.Error().Err(err).Msg("Failed to list visible torrents")
+		http.Error(w, "Failed to load torrents", http.StatusInternalServerError)
+		return
+	}
 	for _, t := range allTorrents {
 		t.Sanitize()
 	}
@@ -395,6 +400,57 @@ func (s *Server) handleGetTorrents(w http.ResponseWriter, r *http.Request) {
 		"has_next":    page < totalPages,
 		"categories":  categories,
 	}, http.StatusOK)
+}
+
+func (s *Server) deleteTorrentEverywhere(hash string, removeFromDebrid bool) (bool, error) {
+	deleted := false
+
+	if removeFromDebrid {
+		existsInStorage, err := s.manager.EntryExists(hash)
+		if err != nil {
+			return false, err
+		}
+		if existsInStorage {
+			if err := s.manager.DeleteEntry(hash, true); err != nil {
+				return false, err
+			}
+			deleted = true
+		}
+
+		err = s.manager.Queue().Delete(hash, func(t *storage.Entry) error {
+			if existsInStorage {
+				return nil
+			}
+			go s.manager.RemoveTorrentPlacements(t)
+			return nil
+		})
+		if err == nil {
+			deleted = true
+		} else if !strings.Contains(err.Error(), "not found") {
+			return false, err
+		}
+
+		return deleted, nil
+	}
+
+	if err := s.manager.Queue().Delete(hash, nil); err == nil {
+		deleted = true
+	} else if !strings.Contains(err.Error(), "not found") {
+		return false, err
+	}
+
+	existsInStorage, err := s.manager.EntryExists(hash)
+	if err != nil {
+		return false, err
+	}
+	if existsInStorage {
+		if err := s.manager.DeleteEntry(hash, false); err != nil {
+			return false, err
+		}
+		deleted = true
+	}
+
+	return deleted, nil
 }
 
 func cloneSeedingPolicy(policy *storage.SeedingPolicy) *storage.SeedingPolicy {
@@ -585,23 +641,15 @@ func (s *Server) handleDeleteTorrent(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "No hash provided", http.StatusBadRequest)
 		return
 	}
-	var cleanup func(torrent *storage.Entry) error
 
-	if removeFromDebrid {
-		cleanup = func(t *storage.Entry) error {
-			exists, _ := s.manager.EntryExists(t.InfoHash)
-			if exists {
-				// Remove the entry from manager fully, which will handle removing from debrid and deleting the entry
-				return s.manager.DeleteEntry(t.InfoHash, true)
-			}
-			go s.manager.RemoveTorrentPlacements(t)
-			return nil
-		}
+	deleted, err := s.deleteTorrentEverywhere(hash, removeFromDebrid)
+	if err != nil {
+		s.logger.Error().Err(err).Str("hash", hash).Msg("Failed to delete torrent")
+		http.Error(w, "Failed to delete torrent", http.StatusInternalServerError)
+		return
 	}
-
-	if err := s.manager.Queue().Delete(hash, cleanup); err != nil {
-		s.logger.Error().Err(err).Str("hash", hash).Msg("Failed to delete entry from queue")
-		http.Error(w, "Failed to delete entry from queue", http.StatusInternalServerError)
+	if !deleted {
+		http.Error(w, "Torrent not found", http.StatusNotFound)
 		return
 	}
 
@@ -616,22 +664,16 @@ func (s *Server) handleDeleteTorrents(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	hashes := strings.Split(hashesStr, ",")
-	var cleanup func(torrent *storage.Entry) error
-	if removeFromDebrid {
-		cleanup = func(t *storage.Entry) error {
-			exists, _ := s.manager.EntryExists(t.InfoHash)
-			if exists {
-				// Remove the entry from manager fully, which will handle removing from debrid and deleting the entry
-				return s.manager.DeleteEntry(t.InfoHash, true)
-			}
-			go s.manager.RemoveTorrentPlacements(t)
-			return nil
+
+	for _, hash := range hashes {
+		if hash == "" {
+			continue
 		}
-	}
-	if err := s.manager.Queue().DeleteWhere("", config.ProtocolAll, "", hashes, cleanup); err != nil {
-		s.logger.Error().Err(err).Msg("Failed to delete torrents")
-		http.Error(w, "Failed to delete torrents", http.StatusInternalServerError)
-		return
+		if _, err := s.deleteTorrentEverywhere(hash, removeFromDebrid); err != nil {
+			s.logger.Error().Err(err).Str("hash", hash).Msg("Failed to delete torrent")
+			http.Error(w, "Failed to delete torrents", http.StatusInternalServerError)
+			return
+		}
 	}
 
 	w.WriteHeader(http.StatusOK)

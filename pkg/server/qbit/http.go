@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"net/http"
 	"path/filepath"
+	"sort"
 	"strconv"
 	"strings"
 
@@ -51,6 +52,12 @@ func parseSeedingPolicy(r *http.Request) (*storage.SeedingPolicy, error) {
 	}
 
 	return &policy, nil
+}
+
+func sortQBitEntriesByAddedOnDesc(entries []*storage.Entry) {
+	sort.Slice(entries, func(i, j int) bool {
+		return entries[i].AddedOn.After(entries[j].AddedOn)
+	})
 }
 
 func (q *QBit) handleLogin(w http.ResponseWriter, r *http.Request) {
@@ -116,7 +123,12 @@ func (q *QBit) handleTorrentsInfo(w http.ResponseWriter, r *http.Request) {
 	hashes := getHashes(ctx)
 
 	// Convert hashes to filter function
-	torrents := q.manager.Queue().ListFilter(category, config.ProtocolTorrent, storage.TorrentState(state), hashes, "added_on", false)
+	torrents, err := q.manager.ListVisibleEntries(category, config.ProtocolTorrent, storage.TorrentState(state), hashes)
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+	sortQBitEntriesByAddedOnDesc(torrents)
 	qbitTorrents := make([]Torrent, len(torrents))
 	for i, t := range torrents {
 		qbitTorrents[i] = convertToQBitTorrentTorrent(t)
@@ -165,6 +177,22 @@ func (q *QBit) handleTorrentsAdd(w http.ResponseWriter, r *http.Request) {
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusBadRequest)
 		return
+	}
+	policyLog := q.logger.Debug().
+		Str("debrid", debridName).
+		Str("category", category).
+		Str("ratio_limit_raw", strings.TrimSpace(r.FormValue("ratioLimit"))).
+		Str("seeding_time_limit_raw", strings.TrimSpace(r.FormValue("seedingTimeLimit")))
+	if seedingPolicy != nil {
+		if seedingPolicy.StopOnRatio != nil {
+			policyLog = policyLog.Float64("ratio_limit", *seedingPolicy.StopOnRatio)
+		}
+		if seedingPolicy.StopAfterMinutes != nil {
+			policyLog = policyLog.Int("seeding_time_limit_minutes", *seedingPolicy.StopAfterMinutes)
+		}
+		policyLog.Msg("Parsed qBittorrent seeding policy from add request")
+	} else {
+		policyLog.Msg("No per-torrent seeding policy found in qBittorrent add request")
 	}
 
 	_arr := getArrFromContext(ctx)
@@ -225,6 +253,17 @@ func (q *QBit) handleTorrentsDelete(w http.ResponseWriter, r *http.Request) {
 		if err != nil && !strings.Contains(err.Error(), "not found") {
 			http.Error(w, err.Error(), http.StatusInternalServerError)
 			return
+		}
+		exists, existsErr := q.manager.EntryExists(hash)
+		if existsErr != nil {
+			http.Error(w, existsErr.Error(), http.StatusInternalServerError)
+			return
+		}
+		if exists {
+			if err := q.manager.DeleteEntry(hash, false); err != nil {
+				http.Error(w, err.Error(), http.StatusInternalServerError)
+				return
+			}
 		}
 	}
 

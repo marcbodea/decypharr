@@ -119,3 +119,16 @@ func intPtrEqual(got, want *int) bool {
 	}
 	return *got == *want
 }
+
+func TestSplitHashes(t *testing.T) {
+	hashes := splitHashes("abc|def,ghi\njkl")
+	if len(hashes) != 4 {
+		t.Fatalf("unexpected hash count: got %d want 4", len(hashes))
+	}
+	want := []string{"abc", "def", "ghi", "jkl"}
+	for i := range want {
+		if hashes[i] != want[i] {
+			t.Fatalf("unexpected hash at %d: got %q want %q", i, hashes[i], want[i])
+		}
+	}
+}

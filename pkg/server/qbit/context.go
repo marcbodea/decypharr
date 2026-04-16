@@ -212,12 +212,14 @@ func hashesContext(next http.Handler) http.Handler {
 		_hashes := chi.URLParam(r, "hashes")
 		var hashes []string
 		if _hashes != "" {
-			hashes = strings.Split(_hashes, "|")
+			hashes = append(hashes, splitHashes(_hashes)...)
 		}
 		if hashes == nil {
 			// GetReader hashes from form
 			_ = r.ParseForm()
-			hashes = r.Form["hashes"]
+			for _, raw := range r.Form["hashes"] {
+				hashes = append(hashes, splitHashes(raw)...)
+			}
 		}
 		for i, hash := range hashes {
 			hashes[i] = strings.TrimSpace(hash)
@@ -225,4 +227,25 @@ func hashesContext(next http.Handler) http.Handler {
 		ctx := context.WithValue(r.Context(), hashesKey, hashes)
 		next.ServeHTTP(w, r.WithContext(ctx))
 	})
+}
+
+func splitHashes(raw string) []string {
+	raw = strings.TrimSpace(raw)
+	if raw == "" {
+		return nil
+	}
+
+	fields := strings.FieldsFunc(raw, func(r rune) bool {
+		return r == '|' || r == ',' || r == '\n' || r == '\r'
+	})
+
+	hashes := make([]string, 0, len(fields))
+	for _, field := range fields {
+		field = strings.TrimSpace(field)
+		if field != "" {
+			hashes = append(hashes, field)
+		}
+	}
+
+	return hashes
 }

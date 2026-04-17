@@ -1,9 +1,14 @@
 package qbit
 
 import (
+	"io"
+	"net/http"
 	"net/http/httptest"
 	"net/url"
 	"testing"
+	"time"
+
+	"github.com/sirrobot01/decypharr/pkg/storage"
 )
 
 func TestParseSeedingPolicy(t *testing.T) {
@@ -130,5 +135,48 @@ func TestSplitHashes(t *testing.T) {
 		if hashes[i] != want[i] {
 			t.Fatalf("unexpected hash at %d: got %q want %q", i, hashes[i], want[i])
 		}
+	}
+}
+
+func TestHandleWebAPIVersion(t *testing.T) {
+	req := httptest.NewRequest(http.MethodGet, "/api/v2/app/webapiVersion", nil)
+	rec := httptest.NewRecorder()
+
+	var q QBit
+	q.handleWebAPIVersion(rec, req)
+
+	res := rec.Result()
+	defer res.Body.Close()
+
+	if res.StatusCode != http.StatusOK {
+		t.Fatalf("unexpected status: got %d want %d", res.StatusCode, http.StatusOK)
+	}
+
+	body, err := io.ReadAll(res.Body)
+	if err != nil {
+		t.Fatalf("failed to read response body: %v", err)
+	}
+	if string(body) != qbitWebAPIVersion {
+		t.Fatalf("unexpected web api version: got %q want %q", string(body), qbitWebAPIVersion)
+	}
+}
+
+func TestConvertToQBitTorrentTorrentSeedingTime(t *testing.T) {
+	now := time.Now()
+	completedAt := now.Add(-2 * time.Minute)
+	entry := &storage.Entry{
+		InfoHash:    "abc123",
+		Name:        "example",
+		Size:        1024,
+		Progress:    1,
+		State:       storage.EntryStatePausedUP,
+		CreatedAt:   now.Add(-10 * time.Minute),
+		CompletedAt: &completedAt,
+	}
+
+	torrent := convertToQBitTorrentTorrent(entry)
+
+	if torrent.SeedingTime < 119 || torrent.SeedingTime > 121 {
+		t.Fatalf("unexpected seeding time: got %d want about 120", torrent.SeedingTime)
 	}
 }

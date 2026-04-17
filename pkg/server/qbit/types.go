@@ -2,6 +2,7 @@ package qbit
 
 import (
 	"path/filepath"
+	"time"
 
 	"github.com/sirrobot01/decypharr/pkg/storage"
 )
@@ -368,6 +369,7 @@ type Torrent struct {
 	Dlspeed      int64                `json:"dlspeed"`
 	Eta          int64                `json:"eta"`
 	NumSeeds     int                  `json:"num_seeds"`
+	SeedingTime  int64                `json:"seeding_time,omitempty"`
 	State        storage.TorrentState `json:"state"`
 	Category     string               `json:"category"`
 	SavePath     string               `json:"save_path"`
@@ -422,6 +424,10 @@ func convertToQBitTorrentTorrent(t *storage.Entry) Torrent {
 	if t.CompletedAt != nil {
 		completionOn = t.CompletedAt.Unix()
 	}
+	var seedingTime int64
+	if t.CompletedAt != nil {
+		seedingTime = max(0, time.Now().Unix()-t.CompletedAt.Unix())
+	}
 
 	qbitTorrent := Torrent{
 		Hash:         t.InfoHash,
@@ -431,6 +437,7 @@ func convertToQBitTorrentTorrent(t *storage.Entry) Torrent {
 		Dlspeed:      t.Speed,
 		Eta:          int64(0), // ETA not tracked
 		NumSeeds:     t.Seeders,
+		SeedingTime:  seedingTime,
 		State:        t.State,
 		Category:     t.Category,
 		SavePath:     t.SavePath,

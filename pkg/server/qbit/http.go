@@ -17,6 +17,8 @@ import (
 	"github.com/sirrobot01/decypharr/pkg/storage"
 )
 
+const qbitWebAPIVersion = "2.8.1"
+
 func parseSeedingPolicy(r *http.Request) (*storage.SeedingPolicy, error) {
 	var policy storage.SeedingPolicy
 
@@ -193,7 +195,7 @@ func (q *QBit) handleVersion(w http.ResponseWriter, r *http.Request) {
 }
 
 func (q *QBit) handleWebAPIVersion(w http.ResponseWriter, r *http.Request) {
-	_, _ = w.Write([]byte("2.7"))
+	_, _ = w.Write([]byte(qbitWebAPIVersion))
 }
 
 func (q *QBit) handlePreferences(w http.ResponseWriter, r *http.Request) {

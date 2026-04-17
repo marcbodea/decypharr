@@ -57,10 +57,7 @@ func (s *Server) SetupHandler(w http.ResponseWriter, r *http.Request) {
 		"Page":    "setup",
 		"Title":   "Setup Wizard",
 	}
-	err := s.templates.ExecuteTemplate(w, "setup_layout", data)
-	if err != nil {
-		s.logger.Error().Err(err).Msg("template error")
-	}
+	s.renderTemplate(w, "setup_layout", data)
 }
 
 // sendSetupError sends an error response

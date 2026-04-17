@@ -20,10 +20,7 @@ func (s *Server) LoginHandler(w http.ResponseWriter, r *http.Request) {
 			"Page":    "login",
 			"Title":   "Login",
 		}
-		err := s.templates.ExecuteTemplate(w, "layout", data)
-		if err != nil {
-			s.logger.Error().Err(err).Msg("template error")
-		}
+		s.renderTemplate(w, "layout", data)
 		return
 	}
 
@@ -73,10 +70,7 @@ func (s *Server) RegisterHandler(w http.ResponseWriter, r *http.Request) {
 			"Page":    "register",
 			"Title":   "registerVolume",
 		}
-		err := s.templates.ExecuteTemplate(w, "layout", data)
-		if err != nil {
-			s.logger.Error().Err(err).Msg("template error")
-		}
+		s.renderTemplate(w, "layout", data)
 		return
 	}
 
@@ -125,10 +119,7 @@ func (s *Server) IndexHandler(w http.ResponseWriter, r *http.Request) {
 		"Title":      "Queues",
 		"SetupError": cfg.SetupError(),
 	}
-	err := s.templates.ExecuteTemplate(w, "layout", data)
-	if err != nil {
-		s.logger.Error().Err(err).Msg("template error")
-	}
+	s.renderTemplate(w, "layout", data)
 }
 
 func (s *Server) DownloadHandler(w http.ResponseWriter, r *http.Request) {
@@ -147,10 +138,7 @@ func (s *Server) DownloadHandler(w http.ResponseWriter, r *http.Request) {
 		"alwaysRemoveTrackerURLS": cfg.AlwaysRmTrackerUrls,
 		"SetupError":              cfg.SetupError(),
 	}
-	err := s.templates.ExecuteTemplate(w, "layout", data)
-	if err != nil {
-		s.logger.Error().Err(err).Msg("template error")
-	}
+	s.renderTemplate(w, "layout", data)
 }
 
 func (s *Server) RepairHandler(w http.ResponseWriter, r *http.Request) {
@@ -161,10 +149,7 @@ func (s *Server) RepairHandler(w http.ResponseWriter, r *http.Request) {
 		"Title":      "Repair",
 		"SetupError": cfg.SetupError(),
 	}
-	err := s.templates.ExecuteTemplate(w, "layout", data)
-	if err != nil {
-		s.logger.Error().Err(err).Msg("template error")
-	}
+	s.renderTemplate(w, "layout", data)
 }
 
 func (s *Server) ConfigHandler(w http.ResponseWriter, r *http.Request) {
@@ -175,10 +160,7 @@ func (s *Server) ConfigHandler(w http.ResponseWriter, r *http.Request) {
 		"Title":      "Config",
 		"SetupError": cfg.SetupError(),
 	}
-	err := s.templates.ExecuteTemplate(w, "layout", data)
-	if err != nil {
-		s.logger.Error().Err(err).Msg("template error")
-	}
+	s.renderTemplate(w, "layout", data)
 }
 
 func (s *Server) StatsHandler(w http.ResponseWriter, r *http.Request) {
@@ -188,10 +170,7 @@ func (s *Server) StatsHandler(w http.ResponseWriter, r *http.Request) {
 		"Page":    "stats",
 		"Title":   "Statistics",
 	}
-	err := s.templates.ExecuteTemplate(w, "layout", data)
-	if err != nil {
-		s.logger.Error().Err(err).Msg("template error")
-	}
+	s.renderTemplate(w, "layout", data)
 }
 
 func (s *Server) BrowseHandler(w http.ResponseWriter, r *http.Request) {
@@ -202,8 +181,5 @@ func (s *Server) BrowseHandler(w http.ResponseWriter, r *http.Request) {
 		"Title":      "Browse Torrents",
 		"SetupError": cfg.SetupError(),
 	}
-	err := s.templates.ExecuteTemplate(w, "layout", data)
-	if err != nil {
-		s.logger.Error().Err(err).Msg("template error")
-	}
+	s.renderTemplate(w, "layout", data)
 }

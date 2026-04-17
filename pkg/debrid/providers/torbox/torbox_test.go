@@ -15,6 +15,48 @@ import (
 	debridTypes "github.com/sirrobot01/decypharr/pkg/debrid/types"
 )
 
+func TestGetTorrentPreservesProviderProgressScale(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(`{
+			"success": true,
+			"error": null,
+			"detail": "ok",
+			"data": {
+				"id": 123,
+				"hash": "abc123",
+				"name": "example.mkv",
+				"size": 1024,
+				"download_state": "downloading",
+				"download_finished": false,
+				"progress": 100,
+				"download_speed": 0,
+				"seeds": 5,
+				"ratio": 0,
+				"created_at": "2026-01-01T00:00:00Z",
+				"files": []
+			}
+		}`))
+	}))
+	defer server.Close()
+
+	tb := &Torbox{
+		Host:   server.URL,
+		client: request.New(),
+		logger: zerolog.Nop(),
+		config: config.Debrid{Name: "torbox", Provider: "torbox"},
+	}
+
+	torrent, err := tb.GetTorrent("123")
+	if err != nil {
+		t.Fatalf("GetTorrent returned error: %v", err)
+	}
+
+	if torrent.Progress != 100 {
+		t.Fatalf("unexpected progress: got %v want 100", torrent.Progress)
+	}
+}
+
 func TestStopSeeding(t *testing.T) {
 	var gotMethod string
 	var gotPath string

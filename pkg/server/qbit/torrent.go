@@ -5,7 +5,6 @@ import (
 	"fmt"
 	"io"
 	"mime/multipart"
-	"strings"
 	"time"
 
 	"github.com/sirrobot01/decypharr/internal/config"
@@ -15,104 +14,12 @@ import (
 	"github.com/sirrobot01/decypharr/pkg/storage"
 )
 
-func (q *QBit) shouldDelayImport(importReq *manager.ImportRequest) bool {
-	if importReq == nil || importReq.Type != manager.ImportTypeQBit || importReq.SeedingPolicy != nil || importReq.Magnet == nil {
-		return false
-	}
-	return q.isTorboxTarget(importReq)
-}
-
 func (q *QBit) submitImport(ctx context.Context, importReq *manager.ImportRequest) error {
 	err := q.manager.AddNewTorrent(ctx, importReq)
 	if err == nil {
 		return nil
 	}
 	return err
-}
-
-func (q *QBit) submitImportAsync(importReq *manager.ImportRequest, reason string) {
-	go func() {
-		q.logger.Debug().
-			Str("hash", importReq.Magnet.InfoHash).
-			Str("name", importReq.Magnet.Name).
-			Str("reason", reason).
-			Bool("has_seeding_policy", importReq.SeedingPolicy != nil).
-			Msg("Submitting delayed qBittorrent torrent import")
-		if err := q.submitImport(context.Background(), importReq); err != nil {
-			q.logger.Error().
-				Err(err).
-				Str("hash", importReq.Magnet.InfoHash).
-				Str("name", importReq.Magnet.Name).
-				Str("reason", reason).
-				Msg("Failed to submit delayed qBittorrent torrent import")
-		}
-	}()
-}
-
-func (q *QBit) queuePendingImport(importReq *manager.ImportRequest) error {
-	hash := strings.ToLower(importReq.Magnet.InfoHash)
-	pending := &pendingTorrentImport{
-		request:   importReq,
-		createdAt: time.Now(),
-	}
-
-	pending.timer = time.AfterFunc(pendingQBitShareLimitWindow, func() {
-		q.releasePendingImport(hash, nil, "timeout")
-	})
-
-	q.pendingImportMu.Lock()
-	if existing, ok := q.pendingImports[hash]; ok {
-		if existing.timer != nil {
-			existing.timer.Stop()
-		}
-	}
-	q.pendingImports[hash] = pending
-	q.pendingImportMu.Unlock()
-
-	q.logger.Debug().
-		Str("hash", importReq.Magnet.InfoHash).
-		Str("name", importReq.Magnet.Name).
-		Dur("delay", pendingQBitShareLimitWindow).
-		Msg("Delaying qBittorrent torrent import while waiting for share limits")
-	return nil
-}
-
-func (q *QBit) releasePendingImport(infoHash string, policy *storage.SeedingPolicy, reason string) bool {
-	hash := strings.ToLower(infoHash)
-
-	q.pendingImportMu.Lock()
-	pending, ok := q.pendingImports[hash]
-	if !ok {
-		q.pendingImportMu.Unlock()
-		return false
-	}
-	delete(q.pendingImports, hash)
-	if pending.timer != nil {
-		pending.timer.Stop()
-	}
-	if policy != nil {
-		pending.request.SeedingPolicy = cloneQBitSeedingPolicy(policy)
-	}
-	request := pending.request
-	age := time.Since(pending.createdAt)
-	q.pendingImportMu.Unlock()
-
-	q.logger.Debug().
-		Str("hash", request.Magnet.InfoHash).
-		Str("name", request.Magnet.Name).
-		Str("reason", reason).
-		Dur("pending_for", age).
-		Bool("has_seeding_policy", request.SeedingPolicy != nil).
-		Msg("Releasing delayed qBittorrent torrent import")
-	q.submitImportAsync(request, reason)
-	return true
-}
-
-func (q *QBit) submitOrDelayImport(ctx context.Context, importReq *manager.ImportRequest) error {
-	if !q.shouldDelayImport(importReq) {
-		return q.submitImport(ctx, importReq)
-	}
-	return q.queuePendingImport(importReq)
 }
 
 // All torrent-related helpers goes here
@@ -124,7 +31,7 @@ func (q *QBit) addMagnet(ctx context.Context, url string, arr *arr.Arr, debrid s
 
 	importReq := manager.NewTorrentRequest(debrid, q.downloadFolder, magnet, arr, action, arr.DownloadUncached, callbackURL, manager.ImportTypeQBit, skipMultiSeason, seedingPolicy)
 
-	err = q.submitOrDelayImport(ctx, importReq)
+	err = q.submitImport(ctx, importReq)
 	if err != nil {
 		return fmt.Errorf("failed to process torrent: %w", err)
 	}
@@ -140,7 +47,7 @@ func (q *QBit) addTorrent(ctx context.Context, fileHeader *multipart.FileHeader,
 		return fmt.Errorf("error reading file: %s \n %w", fileHeader.Filename, err)
 	}
 	importReq := manager.NewTorrentRequest(debrid, q.downloadFolder, magnet, arr, action, arr.DownloadUncached, callbackURL, manager.ImportTypeQBit, skipMultiSeason, seedingPolicy)
-	err = q.submitOrDelayImport(ctx, importReq)
+	err = q.submitImport(ctx, importReq)
 	if err != nil {
 		return fmt.Errorf("failed to process torrent: %w", err)
 	}

@@ -343,7 +343,7 @@ func (tb *Torbox) GetTorrent(torrentId string) (*types.Torrent, error) {
 		Id:               strconv.Itoa(data.Id),
 		Name:             data.Name,
 		Bytes:            data.Size,
-		Progress:         data.Progress * 100,
+		Progress:         data.Progress,
 		Status:           tb.getTorboxStatus(data.DownloadState, data.DownloadFinished),
 		Speed:            data.DownloadSpeed,
 		Seeders:          data.Seeds,
@@ -405,7 +405,7 @@ func (tb *Torbox) UpdateTorrent(t *types.Torrent) error {
 
 	t.Name = name
 	t.Bytes = data.Size
-	t.Progress = data.Progress * 100
+	t.Progress = data.Progress
 	t.Status = tb.getTorboxStatus(data.DownloadState, data.DownloadFinished)
 	t.Speed = data.DownloadSpeed
 	t.Seeders = data.Seeds
@@ -589,7 +589,7 @@ func (tb *Torbox) getTorrents(offset int) ([]*types.Torrent, error) {
 			Id:               strconv.Itoa(data.Id),
 			Name:             data.Name,
 			Bytes:            data.Size,
-			Progress:         data.Progress * 100,
+			Progress:         data.Progress,
 			Status:           tb.getTorboxStatus(data.DownloadState, data.DownloadFinished),
 			Speed:            data.DownloadSpeed,
 			Seeders:          data.Seeds,

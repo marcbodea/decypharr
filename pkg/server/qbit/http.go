@@ -9,7 +9,6 @@ import (
 	"sort"
 	"strconv"
 	"strings"
-	"time"
 
 	"github.com/sirrobot01/decypharr/internal/config"
 	"github.com/sirrobot01/decypharr/internal/utils"
@@ -63,33 +62,6 @@ func sortQBitEntriesByAddedOnDesc(entries []*storage.Entry) {
 	sort.Slice(entries, func(i, j int) bool {
 		return entries[i].AddedOn.After(entries[j].AddedOn)
 	})
-}
-
-func cloneQBitSeedingPolicy(policy *storage.SeedingPolicy) *storage.SeedingPolicy {
-	if policy == nil {
-		return nil
-	}
-
-	cloned := &storage.SeedingPolicy{
-		LastStopError: policy.LastStopError,
-	}
-	if policy.StopOnRatio != nil {
-		ratio := *policy.StopOnRatio
-		cloned.StopOnRatio = &ratio
-	}
-	if policy.StopAfterMinutes != nil {
-		minutes := *policy.StopAfterMinutes
-		cloned.StopAfterMinutes = &minutes
-	}
-	if policy.StopRequestedAt != nil {
-		requestedAt := *policy.StopRequestedAt
-		cloned.StopRequestedAt = &requestedAt
-	}
-	if policy.StopCompletedAt != nil {
-		completedAt := *policy.StopCompletedAt
-		cloned.StopCompletedAt = &completedAt
-	}
-	return cloned
 }
 
 func redactHeaderMap(headers map[string][]string) map[string][]string {
@@ -374,98 +346,6 @@ func (q *QBit) handleTorrentsDelete(w http.ResponseWriter, r *http.Request) {
 				return
 			}
 		}
-	}
-
-	w.WriteHeader(http.StatusOK)
-}
-
-func (q *QBit) handleTorrentsSetShareLimits(w http.ResponseWriter, r *http.Request) {
-	if err := r.ParseForm(); err != nil {
-		http.Error(w, err.Error(), http.StatusBadRequest)
-		return
-	}
-	q.logIncomingRequest(r, "torrents/setShareLimits")
-
-	ctx := r.Context()
-	hashes := getHashes(ctx)
-	if len(hashes) == 0 {
-		http.Error(w, "No hashes provided", http.StatusBadRequest)
-		return
-	}
-
-	inactiveRaw := strings.TrimSpace(r.FormValue("inactiveSeedingTimeLimit"))
-	policy, err := parseSeedingPolicy(r)
-	if err != nil {
-		http.Error(w, err.Error(), http.StatusBadRequest)
-		return
-	}
-
-	if len(hashes) == 1 && strings.EqualFold(hashes[0], "all") {
-		entries, err := q.manager.ListVisibleEntries(getCategory(ctx), config.ProtocolTorrent, "", nil)
-		if err != nil {
-			http.Error(w, err.Error(), http.StatusInternalServerError)
-			return
-		}
-		hashes = hashes[:0]
-		for _, entry := range entries {
-			hashes = append(hashes, entry.InfoHash)
-		}
-	}
-
-	logEvent := q.logger.Debug().
-		Strs("hashes", hashes).
-		Str("ratio_limit_raw", strings.TrimSpace(r.FormValue("ratioLimit"))).
-		Str("seeding_time_limit_raw", strings.TrimSpace(r.FormValue("seedingTimeLimit"))).
-		Str("inactive_seeding_time_limit_raw", inactiveRaw)
-	if policy != nil {
-		if policy.StopOnRatio != nil {
-			logEvent = logEvent.Float64("ratio_limit", *policy.StopOnRatio)
-		}
-		if policy.StopAfterMinutes != nil {
-			logEvent = logEvent.Int("seeding_time_limit_minutes", *policy.StopAfterMinutes)
-		}
-		logEvent.Msg("Received qBittorrent setShareLimits request")
-	} else {
-		logEvent.Msg("Received qBittorrent setShareLimits request clearing per-torrent share limits")
-	}
-
-	updatedAt := time.Now()
-	updatedAny := false
-
-	for _, hash := range hashes {
-		if hash == "" {
-			continue
-		}
-
-		if q.releasePendingImport(hash, policy, "share_limits_received") {
-			updatedAny = true
-			continue
-		}
-
-		if torrent, err := q.manager.Queue().GetTorrent(hash); err == nil && torrent != nil {
-			torrent.SeedingPolicy = cloneQBitSeedingPolicy(policy)
-			torrent.UpdatedAt = updatedAt
-			if err := q.manager.Queue().Update(torrent); err != nil {
-				http.Error(w, err.Error(), http.StatusInternalServerError)
-				return
-			}
-			updatedAny = true
-		}
-
-		if torrent, err := q.manager.GetEntry(hash); err == nil && torrent != nil {
-			torrent.SeedingPolicy = cloneQBitSeedingPolicy(policy)
-			torrent.UpdatedAt = updatedAt
-			if err := q.manager.AddOrUpdate(torrent, nil); err != nil {
-				http.Error(w, err.Error(), http.StatusInternalServerError)
-				return
-			}
-			updatedAny = true
-		}
-	}
-
-	if !updatedAny {
-		http.Error(w, "Torrent not found", http.StatusNotFound)
-		return
 	}
 
 	w.WriteHeader(http.StatusOK)

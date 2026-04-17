@@ -20,7 +20,6 @@ func (q *QBit) Routes() http.Handler {
 
 			r.Post("/add", q.handleTorrentsAdd)
 			r.Post("/delete", q.handleTorrentsDelete)
-			r.Post("/setShareLimits", q.handleTorrentsSetShareLimits)
 
 			r.Get("/categories", q.handleCategories)
 			r.Post("/categories", q.handleCategories)

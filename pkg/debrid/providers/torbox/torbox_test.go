@@ -15,6 +15,63 @@ import (
 	debridTypes "github.com/sirrobot01/decypharr/pkg/debrid/types"
 )
 
+func TestGetTorboxStatus(t *testing.T) {
+	tb := &Torbox{}
+
+	tests := []struct {
+		name     string
+		status   string
+		finished bool
+		want     debridTypes.TorrentStatus
+	}{
+		{
+			name:   "checking stays active",
+			status: "checking",
+			want:   debridTypes.TorrentStatusDownloading,
+		},
+		{
+			name:   "queued stays active",
+			status: "queued",
+			want:   debridTypes.TorrentStatusDownloading,
+		},
+		{
+			name:   "processing with suffix stays active",
+			status: "processing (metadata)",
+			want:   debridTypes.TorrentStatusDownloading,
+		},
+		{
+			name:   "cached is downloaded",
+			status: "cached",
+			want:   debridTypes.TorrentStatusDownloaded,
+		},
+		{
+			name:   "failed processing is error",
+			status: "failed processing",
+			want:   debridTypes.TorrentStatusError,
+		},
+		{
+			name:   "incomplete is error",
+			status: "incomplete",
+			want:   debridTypes.TorrentStatusError,
+		},
+		{
+			name:     "finished overrides state",
+			status:   "checking",
+			finished: true,
+			want:     debridTypes.TorrentStatusDownloaded,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got := tb.getTorboxStatus(tt.status, tt.finished)
+			if got != tt.want {
+				t.Fatalf("getTorboxStatus(%q, %t) = %q, want %q", tt.status, tt.finished, got, tt.want)
+			}
+		})
+	}
+}
+
 func TestGetTorrentPreservesProviderProgressScale(t *testing.T) {
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/json")

@@ -303,24 +303,39 @@ func (tb *Torbox) getTorboxStatus(status string, finished bool) types.TorrentSta
 	if finished {
 		return types.TorrentStatusDownloaded
 	}
-	downloading := []string{"paused", "downloading",
-		"checkingResumeData", "metaDL", "pausedUP", "queuedUP", "checkingUP",
-		"forcedUP", "allocating", "downloading", "metaDL", "pausedDL",
-		"queuedDL", "checkingDL", "forcedDL", "checkingResumeData", "moving"}
+
+	normalizedStatus := strings.TrimSpace(strings.ToLower(
+		regexp.MustCompile(`\s*\(.*?\)\s*`).ReplaceAllString(status, ""),
+	))
 
 	downloaded := []string{
-		"completed", "cached", "uploading", "downloaded",
+		"completed",
+		"cached",
+		"uploading",
+		"downloaded",
+		"download ready",
 	}
 
-	status = regexp.MustCompile(`\s*\(.*?\)\s*`).ReplaceAllString(status, "")
+	errorStates := []string{
+		"failed",
+		"failed processing",
+		"expired",
+		"reported missing",
+		"missing",
+		"incomplete",
+		"inactive",
+	}
 
 	switch {
-	case utils.Contains(downloading, status):
-		return types.TorrentStatusDownloading
-	case utils.Contains(downloaded, status):
+	case utils.Contains(downloaded, normalizedStatus):
 		return types.TorrentStatusDownloaded
-	default:
+	case utils.Contains(errorStates, normalizedStatus):
 		return types.TorrentStatusError
+	default:
+		// Torbox frequently adds or renames in-progress states (for example
+		// "checking" and "queued"). Defaulting unknown active states to
+		// downloading avoids deleting healthy torrents on first poll.
+		return types.TorrentStatusDownloading
 	}
 }
 

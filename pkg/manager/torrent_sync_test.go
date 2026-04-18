@@ -91,6 +91,12 @@ func TestProcessSyncTorrentNormalizesEntryProgressForActiveProvider(t *testing.T
 	if updated.Seeders != 5 {
 		t.Fatalf("unexpected seeders: got %d want 5", updated.Seeders)
 	}
+	if updated.State != storage.EntryStatePausedUP {
+		t.Fatalf("expected completed torrent state %q, got %q", storage.EntryStatePausedUP, updated.State)
+	}
+	if updated.CompletedAt == nil {
+		t.Fatal("expected completed torrent to have a completion time")
+	}
 }
 
 func TestDetectTorrentChangesReprocessesStaleTopLevelProgress(t *testing.T) {

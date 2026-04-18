@@ -118,6 +118,7 @@ func (d *Downloader) markAsCompleted(entry *storage.Entry) {
 	// Mark as completed
 	entry.MarkAsCompleted(entry.DownloadPath())
 	_ = d.manager.queue.Update(entry)
+	_ = d.manager.storage.AddOrUpdate(entry)
 
 	// Send notification
 	msg := fmt.Sprintf("Download completed: %s [%s] -> %s", entry.Name, entry.Category, entry.DownloadPath())

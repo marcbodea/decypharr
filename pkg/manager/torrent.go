@@ -404,6 +404,19 @@ func (m *Manager) processSyncTorrent(t *types.Torrent) (*storage.Entry, error) {
 		mt.IsComplete = len(t.Files) > 0
 	}
 
+	if mt.ActiveProvider == t.Debrid && t.Status == types.TorrentStatusDownloaded {
+		mt.State = storage.EntryStatePausedUP
+		mt.IsDownloading = false
+		mt.IsComplete = true
+		if mt.CompletedAt == nil {
+			completedAt := addedOn
+			if existingPlacement := mt.Providers[t.Debrid]; existingPlacement != nil && existingPlacement.DownloadedAt != nil {
+				completedAt = *existingPlacement.DownloadedAt
+			}
+			mt.CompletedAt = &completedAt
+		}
+	}
+
 	// Populate global Files metadata (only if empty)
 	if len(mt.Files) == 0 {
 		for _, f := range t.GetFiles() {

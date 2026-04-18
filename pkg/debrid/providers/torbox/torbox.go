@@ -5,6 +5,7 @@ import (
 	"context"
 	"fmt"
 	"io"
+	"mime/multipart"
 	"net/http"
 	"net/url"
 	"path"
@@ -186,6 +187,57 @@ func (tb *Torbox) doDelete(endpoint string, payload interface{}) (*http.Response
 	return resp, nil
 }
 
+type multipartFile struct {
+	FieldName string
+	FileName  string
+	Content   []byte
+}
+
+func (tb *Torbox) doPostMultipartForm(endpoint string, formData map[string]string, files []multipartFile, result interface{}) (*http.Response, error) {
+	var body bytes.Buffer
+	writer := multipart.NewWriter(&body)
+
+	for k, v := range formData {
+		if err := writer.WriteField(k, v); err != nil {
+			return nil, err
+		}
+	}
+
+	for _, file := range files {
+		part, err := writer.CreateFormFile(file.FieldName, file.FileName)
+		if err != nil {
+			return nil, err
+		}
+		if _, err := part.Write(file.Content); err != nil {
+			return nil, err
+		}
+	}
+
+	if err := writer.Close(); err != nil {
+		return nil, err
+	}
+
+	req, err := http.NewRequest(http.MethodPost, tb.Host+endpoint, &body)
+	if err != nil {
+		return nil, err
+	}
+	req.Header.Set("Content-Type", writer.FormDataContentType())
+
+	resp, err := tb.client.Do(req)
+	if err != nil {
+		return nil, err
+	}
+	defer resp.Body.Close()
+
+	if result != nil && resp.ContentLength != 0 {
+		if err := json.ConfigDefault.NewDecoder(resp.Body).Decode(result); err != nil && resp.StatusCode >= 200 && resp.StatusCode < 300 {
+			return resp, err
+		}
+	}
+
+	return resp, nil
+}
+
 func (tb *Torbox) doPostJSON(endpoint string, payload interface{}, result interface{}) (*http.Response, error) {
 	var body io.Reader
 	if payload != nil {
@@ -269,6 +321,9 @@ func (tb *Torbox) SubmitMagnet(torrent *types.Torrent) (*types.Torrent, error) {
 	if torrent.RequestSeeding {
 		formData["seed"] = "2"
 	}
+	if torrent.Name != "" {
+		formData["name"] = torrent.Name
+	}
 	tb.logger.Debug().
 		Str("hash", torrent.InfoHash).
 		Bool("request_seeding", torrent.RequestSeeding).
@@ -276,7 +331,35 @@ func (tb *Torbox) SubmitMagnet(torrent *types.Torrent) (*types.Torrent, error) {
 		Bool("add_only_if_cached", formData["add_only_if_cached"] == "true").
 		Msg("Submitting Torbox create torrent request")
 
-	resp, err := tb.doPostForm("/api/torrents/createtorrent", formData, &data)
+	var (
+		resp *http.Response
+		err  error
+	)
+	if torrent.Magnet != nil && torrent.Magnet.IsTorrent() {
+		delete(formData, "magnet")
+
+		filename := strings.TrimSpace(torrent.OriginalFilename)
+		if filename == "" {
+			filename = strings.TrimSpace(torrent.Name)
+		}
+		if filename == "" {
+			filename = strings.TrimSpace(torrent.InfoHash)
+		}
+		if filename == "" {
+			filename = "torrent"
+		}
+		if filepath.Ext(filename) == "" {
+			filename += ".torrent"
+		}
+
+		resp, err = tb.doPostMultipartForm("/api/torrents/createtorrent", formData, []multipartFile{{
+			FieldName: "file",
+			FileName:  filepath.Base(filename),
+			Content:   torrent.Magnet.File,
+		}}, &data)
+	} else {
+		resp, err = tb.doPostForm("/api/torrents/createtorrent", formData, &data)
+	}
 	if err != nil {
 		return nil, err
 	}

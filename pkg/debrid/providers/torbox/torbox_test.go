@@ -3,6 +3,8 @@ package torbox
 import (
 	"encoding/json"
 	"io"
+	"mime"
+	"mime/multipart"
 	"net/http"
 	"net/http/httptest"
 	"net/url"
@@ -210,5 +212,94 @@ func TestSubmitMagnetRequestsSeedingWhenPolicyIsSet(t *testing.T) {
 
 	if gotForm.Get("seed") != "2" {
 		t.Fatalf("unexpected seed form value: %q", gotForm.Get("seed"))
+	}
+}
+
+func TestSubmitMagnetUploadsTorrentFileWhenAvailable(t *testing.T) {
+	var (
+		gotForm         map[string][]string
+		gotFileContents []byte
+		gotFileName     string
+		gotContentType  string
+	)
+
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		gotContentType = r.Header.Get("Content-Type")
+
+		mediaType, params, err := mime.ParseMediaType(gotContentType)
+		if err != nil {
+			t.Fatalf("failed to parse content type: %v", err)
+		}
+		if mediaType != "multipart/form-data" {
+			t.Fatalf("unexpected media type: %s", mediaType)
+		}
+
+		reader := multipart.NewReader(r.Body, params["boundary"])
+		form, err := reader.ReadForm(1 << 20)
+		if err != nil {
+			t.Fatalf("failed to read multipart form: %v", err)
+		}
+
+		gotForm = form.Value
+
+		files := form.File["file"]
+		if len(files) != 1 {
+			t.Fatalf("expected one file upload, got %d", len(files))
+		}
+		gotFileName = files[0].Filename
+
+		file, err := files[0].Open()
+		if err != nil {
+			t.Fatalf("failed to open uploaded file: %v", err)
+		}
+		defer file.Close()
+
+		gotFileContents, err = io.ReadAll(file)
+		if err != nil {
+			t.Fatalf("failed to read uploaded file: %v", err)
+		}
+
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(`{"success":true,"error":null,"detail":"ok","data":{"torrent_id":123,"hash":"abc"}}`))
+	}))
+	defer server.Close()
+
+	tb := &Torbox{
+		Host:   server.URL,
+		client: request.New(),
+		logger: zerolog.Nop(),
+		config: config.Debrid{Name: "torbox", Provider: "torbox"},
+	}
+
+	const torrentBytes = "dummy torrent bytes"
+	torrent := &debridTypes.Torrent{
+		InfoHash:         "abc",
+		Name:             "Example Release",
+		OriginalFilename: "example-release",
+		Magnet: &utils.Magnet{
+			Link: "magnet:?xt=urn:btih:abc",
+			File: []byte(torrentBytes),
+		},
+		RequestSeeding: true,
+	}
+
+	if _, err := tb.SubmitMagnet(torrent); err != nil {
+		t.Fatalf("SubmitMagnet returned error: %v", err)
+	}
+
+	if gotForm["seed"][0] != "2" {
+		t.Fatalf("unexpected seed form value: %q", gotForm["seed"][0])
+	}
+	if gotForm["name"][0] != "Example Release" {
+		t.Fatalf("unexpected name form value: %q", gotForm["name"][0])
+	}
+	if _, ok := gotForm["magnet"]; ok {
+		t.Fatal("expected multipart torrent submission to omit magnet field")
+	}
+	if string(gotFileContents) != torrentBytes {
+		t.Fatalf("unexpected uploaded file contents: %q", string(gotFileContents))
+	}
+	if gotFileName != "example-release.torrent" {
+		t.Fatalf("unexpected uploaded filename: %q", gotFileName)
 	}
 }

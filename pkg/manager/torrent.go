@@ -2,6 +2,7 @@ package manager
 
 import (
 	"context"
+	"math"
 	"sync"
 	"sync/atomic"
 	"time"
@@ -46,6 +47,19 @@ const (
 	refreshWorkChanBuffer  = 100
 	refreshBatchChanBuffer = 50
 )
+
+func normalizeEntryProgress(progress float64) float64 {
+	switch {
+	case progress <= 0:
+		return 0
+	case progress <= 1:
+		return progress
+	case progress >= 100:
+		return 1
+	default:
+		return progress / 100.0
+	}
+}
 
 // refreshTorrents refreshes torrents from a specific debrid service.
 // Returns an error if the refresh fails.
@@ -150,7 +164,8 @@ func (m *Manager) detectTorrentChanges(provider string, remoteTorrentsByHash map
 					} else {
 						torrentsToUpdate = append(torrentsToUpdate, entry)
 					}
-				} else if oldPlacement.NeedsUpdate(currentTorrent) {
+				} else if oldPlacement.NeedsUpdate(currentTorrent) ||
+					(entry.ActiveProvider == provider && math.Abs(entry.Progress-normalizeEntryProgress(currentTorrent.Progress)) > 0.0001) {
 					// currentTorrent has changes for this provider - update placement info
 					// But the issue is that currentTorrent may not have all the metadata we need to update the placement (e.g. downloadedAt, files etc)
 					// So we need to fetch the full torrent info from debrid to ensure we have all the metadata to update the placement correctly
@@ -366,7 +381,7 @@ func (m *Manager) processSyncTorrent(t *types.Torrent) (*storage.Entry, error) {
 			Providers:        make(map[string]*storage.ProviderEntry),
 			Files:            make(map[string]*storage.File),
 			Status:           t.Status,
-			Progress:         t.Progress,
+			Progress:         normalizeEntryProgress(t.Progress),
 			Speed:            t.Speed,
 			Seeders:          t.Seeders,
 			IsComplete:       len(t.Files) > 0,
@@ -375,6 +390,18 @@ func (m *Manager) processSyncTorrent(t *types.Torrent) (*storage.Entry, error) {
 			CreatedAt:        addedOn,
 			UpdatedAt:        time.Now(),
 		}
+	}
+
+	if mt.ActiveProvider == "" || mt.ActiveProvider == t.Debrid {
+		mt.Status = t.Status
+		mt.Progress = normalizeEntryProgress(t.Progress)
+		mt.Speed = t.Speed
+		mt.Seeders = t.Seeders
+		if size := t.GetSize(); size > 0 {
+			mt.Size = size
+			mt.Bytes = size
+		}
+		mt.IsComplete = len(t.Files) > 0
 	}
 
 	// Populate global Files metadata (only if empty)

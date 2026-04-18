@@ -157,6 +157,11 @@ func (m *Manager) detectTorrentChanges(provider string, remoteTorrentsByHash map
 			oldPlacement, placementOnDebrid := entry.Providers[provider]
 
 			if placementOnDebrid {
+				staleCompletedState := entry.ActiveProvider == provider &&
+					currentTorrent != nil &&
+					currentTorrent.Status == types.TorrentStatusDownloaded &&
+					(entry.State != storage.EntryStatePausedUP || entry.CompletedAt == nil || !entry.IsComplete)
+
 				if !onRemote {
 					entry.RemoveProvider(provider, nil)
 					if len(entry.Providers) == 0 {
@@ -165,7 +170,8 @@ func (m *Manager) detectTorrentChanges(provider string, remoteTorrentsByHash map
 						torrentsToUpdate = append(torrentsToUpdate, entry)
 					}
 				} else if oldPlacement.NeedsUpdate(currentTorrent) ||
-					(entry.ActiveProvider == provider && math.Abs(entry.Progress-normalizeEntryProgress(currentTorrent.Progress)) > 0.0001) {
+					(entry.ActiveProvider == provider && math.Abs(entry.Progress-normalizeEntryProgress(currentTorrent.Progress)) > 0.0001) ||
+					staleCompletedState {
 					// currentTorrent has changes for this provider - update placement info
 					// But the issue is that currentTorrent may not have all the metadata we need to update the placement (e.g. downloadedAt, files etc)
 					// So we need to fetch the full torrent info from debrid to ensure we have all the metadata to update the placement correctly

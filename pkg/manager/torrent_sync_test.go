@@ -175,3 +175,82 @@ func TestDetectTorrentChangesReprocessesStaleTopLevelProgress(t *testing.T) {
 		t.Fatalf("expected stale entry to be reprocessed, got %d entries", len(newTorrents))
 	}
 }
+
+func TestDetectTorrentChangesReprocessesStaleCompletedState(t *testing.T) {
+	strg, err := storage.NewStorage(t.TempDir())
+	if err != nil {
+		t.Fatalf("failed to create storage: %v", err)
+	}
+	defer func() { _ = strg.Close() }()
+
+	mgr := &Manager{
+		storage: strg,
+		clients: xsync.NewMap[string, debrid.Client](),
+		queue:   newQueue(context.Background(), strg, 10, ""),
+		logger:  zerolog.Nop(),
+	}
+	mgr.clients.Store("torbox", availabilityClientStub{})
+
+	addedAt := time.Now().Add(-time.Hour)
+	entry := &storage.Entry{
+		Protocol:         config.ProtocolTorrent,
+		InfoHash:         "hash-b",
+		Name:             "example",
+		OriginalFilename: "example",
+		ActiveProvider:   "torbox",
+		Providers: map[string]*storage.ProviderEntry{
+			"torbox": {
+				Provider: "torbox",
+				ID:       "torrent-id",
+				Status:   debridTypes.TorrentStatusDownloaded,
+				Progress: 100,
+				Files: map[string]*storage.ProviderFile{
+					"example.mkv": {Id: "1", Link: "torbox://torrent-id/1", Path: "example.mkv"},
+				},
+			},
+		},
+		Files: map[string]*storage.File{
+			"example.mkv": {Name: "example.mkv", Size: 100, AddedOn: addedAt},
+		},
+		Status:     debridTypes.TorrentStatusDownloaded,
+		State:      storage.EntryStateDownloading,
+		Progress:   1,
+		IsComplete: true,
+		AddedOn:    addedAt,
+		CreatedAt:  addedAt,
+		UpdatedAt:  addedAt,
+	}
+	if err := strg.AddOrUpdate(entry); err != nil {
+		t.Fatalf("failed to seed storage entry: %v", err)
+	}
+
+	remote := map[string]*debridTypes.Torrent{
+		"hash-b": {
+			Id:               "torrent-id",
+			InfoHash:         "hash-b",
+			Name:             "example",
+			OriginalFilename: "example",
+			Status:           debridTypes.TorrentStatusDownloaded,
+			Progress:         100,
+			Debrid:           "torbox",
+			Added:            addedAt,
+			Files: map[string]debridTypes.File{
+				"example.mkv": {Id: "1", Name: "example.mkv", Size: 100, Path: "example.mkv", Link: "torbox://torrent-id/1"},
+			},
+		},
+	}
+
+	newTorrents, torrentsToUpdate, torrentsToDelete, err := mgr.detectTorrentChanges("torbox", remote)
+	if err != nil {
+		t.Fatalf("detectTorrentChanges returned error: %v", err)
+	}
+	if len(torrentsToUpdate) != 0 {
+		t.Fatalf("expected no direct updates, got %d", len(torrentsToUpdate))
+	}
+	if len(torrentsToDelete) != 0 {
+		t.Fatalf("expected no deletions, got %d", len(torrentsToDelete))
+	}
+	if len(newTorrents) != 1 {
+		t.Fatalf("expected stale completed entry to be reprocessed, got %d entries", len(newTorrents))
+	}
+}

@@ -13,7 +13,6 @@ func (s *Server) renderTemplate(w http.ResponseWriter, name string, data interfa
 	}
 
 	if customerror.IsSilentError(err) {
-		s.logger.Debug().Err(err).Msg("template client disconnected")
 		return
 	}
 

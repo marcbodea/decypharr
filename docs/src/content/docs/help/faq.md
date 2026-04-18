@@ -327,6 +327,19 @@ docker logs decypharr
 docker logs -f decypharr  # Follow
 ```
 
+If you want Docker's host-side logs rotated, configure the container with:
+```yaml
+logging:
+  driver: json-file
+  options:
+    max-size: "50m"
+    max-file: "3"
+```
+
+Decypharr also keeps rotating application logs in `/app/logs`:
+- `decypharr.log` rotates at 10 MB and keeps up to 10 compressed backups
+- `rclone.log` rotates at 10 MB and keeps up to 5 compressed backups
+
 **Binary**: stdout (redirect to file if needed)
 
 Set log level:

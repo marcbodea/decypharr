@@ -334,13 +334,15 @@ func (s *Service) validateLink(ctx context.Context, link *types.DownloadLink) er
 		return nil
 	}
 
-	// Torbox can transiently return HTTP 400 on requestdl before the file becomes
-	// streamable, even though the same deterministic URL works moments later.
-	// Treat that as refetchable so we don't permanently poison validation state.
-	if link.Debrid == "torbox" && resp.StatusCode == http.StatusBadRequest {
+	// Torbox download links are short-lived signed CDN URLs. A 400 can happen
+	// before the file becomes streamable, and a 403 often means the redirected
+	// link needs to be refreshed. Treat both as refetchable so we don't
+	// permanently poison validation state with an expired Torbox URL.
+	if link.Debrid == "torbox" &&
+		(resp.StatusCode == http.StatusBadRequest || resp.StatusCode == http.StatusForbidden) {
 		return NewRefetchableError(
-			fmt.Errorf("torbox download link returned HTTP 400"),
-			"400",
+			fmt.Errorf("torbox download link returned HTTP %d", resp.StatusCode),
+			strconv.Itoa(resp.StatusCode),
 		)
 	}
 

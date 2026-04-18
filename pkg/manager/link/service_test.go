@@ -38,6 +38,35 @@ func TestValidateLinkTorbox400IsRefetchable(t *testing.T) {
 	}
 }
 
+func TestValidateLinkTorbox403IsRefetchable(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		http.Error(w, "forbidden", http.StatusForbidden)
+	}))
+	defer srv.Close()
+
+	svc := &Service{
+		httpClient: srv.Client(),
+	}
+
+	err := svc.validateLink(context.Background(), &debridtypes.DownloadLink{
+		Debrid:       "torbox",
+		Filename:     "movie.mkv",
+		Link:         "torbox://123/0",
+		DownloadLink: srv.URL,
+	})
+	if err == nil {
+		t.Fatal("expected validation error")
+	}
+
+	linkErr := GetLinkError(err)
+	if linkErr == nil {
+		t.Fatalf("expected link error, got %T", err)
+	}
+	if !linkErr.ShouldRefetch() {
+		t.Fatalf("expected refetchable error, got category %s", linkErr.Category.String())
+	}
+}
+
 func TestValidateLinkGeneric400RemainsPermanent(t *testing.T) {
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "bad request", http.StatusBadRequest)

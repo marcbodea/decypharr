@@ -43,6 +43,11 @@ services:
       - SYS_ADMIN
     security_opt:
       - apparmor:unconfined
+    logging:
+      driver: json-file
+      options:
+        max-size: "50m"
+        max-file: "3"
 ```
 
 ## Documentation

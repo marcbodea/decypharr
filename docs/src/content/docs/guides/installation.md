@@ -26,6 +26,11 @@ services:
       - SYS_ADMIN
     security_opt:
       - apparmor:unconfined
+    logging:
+      driver: json-file
+      options:
+        max-size: "50m"
+        max-file: "3"
 ```
 
 Run:
@@ -47,12 +52,18 @@ docker run -d \
   -v ./cache:/cache \
   -e PUID=1000 \
   -e PGID=1000 \
-    --restart unless-stopped \
-    --device /dev/fuse:/dev/fuse:rwm \
-    --cap-add SYS_ADMIN \
-    --security-opt apparmor:unconfined \
+  --restart unless-stopped \
+  --device /dev/fuse:/dev/fuse:rwm \
+  --cap-add SYS_ADMIN \
+  --security-opt apparmor:unconfined \
+  --log-opt max-size=50m \
+  --log-opt max-file=3 \
   sirrobot01/decypharr:latest
 ```
+
+Decypharr also writes rotating application logs inside `/app/logs`:
+- `decypharr.log` rotates at 10 MB with up to 10 compressed backups
+- `rclone.log` rotates at 10 MB with up to 5 compressed backups
 
 ## Binary
 

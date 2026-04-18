@@ -27,6 +27,11 @@ services:
     volumes:
       - ./config:/config
     user: "1000:1000"  # Match your user ID
+    logging:
+      driver: json-file
+      options:
+        max-size: "50m"
+        max-file: "3"
 ```
 
 ### Binary: "permission denied"
@@ -378,6 +383,8 @@ If logs are large:
 ```json
 {"log_level": "warn"}
 ```
+
+Docker stdout logs and `/app/logs/*.log` are separate. Decypharr rotates its own file logs automatically, but `docker logs` only rotates if the container or daemon logging driver is configured with limits such as `max-size` and `max-file`.
 
 ## WebDAV Issues
 

@@ -224,8 +224,9 @@ func (m *Manager) processQueuedTorrent(entry *storage.Entry) {
 		return
 	}
 
-	// Update entry progress
-	entry.Progress = debridTorrent.Progress / 100.0
+	// Normalize provider progress so providers that report 0..1 and 0..100
+	// both render correctly in the dashboard.
+	entry.Progress = normalizeEntryProgress(debridTorrent.Progress)
 	entry.Speed = debridTorrent.Speed
 	entry.Size = debridTorrent.GetSize()
 	entry.Seeders = debridTorrent.Seeders

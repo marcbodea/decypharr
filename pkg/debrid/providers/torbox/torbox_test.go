@@ -88,7 +88,7 @@ func TestGetTorrentPreservesProviderProgressScale(t *testing.T) {
 				"size": 1024,
 				"download_state": "downloading",
 				"download_finished": false,
-				"progress": 100,
+				"progress": 1,
 				"download_speed": 0,
 				"seeds": 5,
 				"ratio": 0,
@@ -111,8 +111,8 @@ func TestGetTorrentPreservesProviderProgressScale(t *testing.T) {
 		t.Fatalf("GetTorrent returned error: %v", err)
 	}
 
-	if torrent.Progress != 100 {
-		t.Fatalf("unexpected progress: got %v want 100", torrent.Progress)
+	if torrent.Progress != 1 {
+		t.Fatalf("unexpected progress: got %v want 1", torrent.Progress)
 	}
 }
 

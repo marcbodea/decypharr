@@ -99,6 +99,67 @@ func TestProcessSyncTorrentNormalizesEntryProgressForActiveProvider(t *testing.T
 	}
 }
 
+func TestProcessSyncTorrentKeepsInProgressTorboxWithoutDownloadLinks(t *testing.T) {
+	strg, err := storage.NewStorage(t.TempDir())
+	if err != nil {
+		t.Fatalf("failed to create storage: %v", err)
+	}
+	defer func() { _ = strg.Close() }()
+
+	mgr := &Manager{
+		storage: strg,
+		clients: xsync.NewMap[string, debrid.Client](),
+		logger:  zerolog.Nop(),
+	}
+	mgr.clients.Store("torbox", availabilityClientStub{})
+
+	addedAt := time.Now().Add(-time.Hour)
+	remote := &debridTypes.Torrent{
+		Id:               "torrent-id",
+		InfoHash:         "hash-progress",
+		Name:             "example",
+		OriginalFilename: "example",
+		Size:             100,
+		Bytes:            100,
+		Status:           debridTypes.TorrentStatusDownloading,
+		Progress:         0.42,
+		Speed:            1234,
+		Seeders:          7,
+		Debrid:           "torbox",
+		Added:            addedAt,
+		Files: map[string]debridTypes.File{
+			"example.mkv": {Id: "1", Name: "example.mkv", Size: 100, Path: "example.mkv"},
+		},
+	}
+
+	updated, err := mgr.processSyncTorrent(remote)
+	if err != nil {
+		t.Fatalf("processSyncTorrent returned error: %v", err)
+	}
+	if updated == nil {
+		t.Fatal("expected in-progress torrent to be returned")
+	}
+	if updated.Progress != 0.42 {
+		t.Fatalf("unexpected normalized progress: got %v want 0.42", updated.Progress)
+	}
+	if updated.IsComplete {
+		t.Fatal("expected in-progress torrent without links to remain incomplete")
+	}
+	if updated.Speed != 1234 {
+		t.Fatalf("unexpected speed: got %d want 1234", updated.Speed)
+	}
+	if updated.Seeders != 7 {
+		t.Fatalf("unexpected seeders: got %d want 7", updated.Seeders)
+	}
+	placement := updated.Providers["torbox"]
+	if placement == nil {
+		t.Fatal("expected torbox placement to exist")
+	}
+	if placement.Progress != 0.42 {
+		t.Fatalf("unexpected placement progress: got %v want 0.42", placement.Progress)
+	}
+}
+
 func TestDetectTorrentChangesReprocessesStaleTopLevelProgress(t *testing.T) {
 	strg, err := storage.NewStorage(t.TempDir())
 	if err != nil {

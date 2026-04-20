@@ -347,11 +347,6 @@ func (m *Manager) processSyncTorrent(t *types.Torrent) (*storage.Entry, error) {
 		if err := client.UpdateTorrent(t); err != nil {
 			return nil, err
 		}
-
-		// Re-check completion after update
-		if !isComplete(t.Files) {
-			return nil, nil
-		}
 	}
 
 	addedOn := t.Added
@@ -390,7 +385,7 @@ func (m *Manager) processSyncTorrent(t *types.Torrent) (*storage.Entry, error) {
 			Progress:         normalizeEntryProgress(t.Progress),
 			Speed:            t.Speed,
 			Seeders:          t.Seeders,
-			IsComplete:       len(t.Files) > 0,
+			IsComplete:       isComplete(t.Files),
 			Bad:              false,
 			AddedOn:          addedOn,
 			CreatedAt:        addedOn,
@@ -407,7 +402,7 @@ func (m *Manager) processSyncTorrent(t *types.Torrent) (*storage.Entry, error) {
 			mt.Size = size
 			mt.Bytes = size
 		}
-		mt.IsComplete = len(t.Files) > 0
+		mt.IsComplete = isComplete(t.Files)
 	}
 
 	if mt.ActiveProvider == t.Debrid && t.Status == types.TorrentStatusDownloaded {
@@ -439,7 +434,7 @@ func (m *Manager) processSyncTorrent(t *types.Torrent) (*storage.Entry, error) {
 
 	// AddOrUpdate or update placement
 	placement := mt.AddTorrentProvider(t)
-	placement.Progress = t.Progress
+	placement.Progress = normalizeEntryProgress(t.Progress)
 	placement.Ratio = t.Ratio
 	if t.Status == types.TorrentStatusDownloaded {
 		downloadedAt := addedOn

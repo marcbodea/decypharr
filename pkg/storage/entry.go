@@ -330,7 +330,9 @@ func (s *Storage) DeleteQueued(infohash string, cleanup func(*Entry) error) erro
 	key := strings.ToLower(infohash)
 	if cleanup != nil {
 		if entry, err := s.GetQueued(key); err == nil {
-			_ = cleanup(entry)
+			if err := cleanup(entry); err != nil {
+				return err
+			}
 		}
 	}
 	return s.queue.Delete(key)
@@ -355,19 +357,24 @@ func (s *Storage) FilterQueued(filter func(*Entry) bool) ([]*Entry, error) {
 // DeleteWhereQueued deletes matching queued entries
 func (s *Storage) DeleteWhereQueued(predicate func(*Entry) bool, cleanup func(*Entry) error) error {
 	var keysToDelete []string
-	_ = s.queue.ForEach(func(key string, value []byte) error {
+	err := s.queue.ForEach(func(key string, value []byte) error {
 		var pb EntryProto
 		if proto.Unmarshal(value, &pb) == nil {
 			entry := ProtoToEntry(&pb)
 			if predicate == nil || predicate(entry) {
 				if cleanup != nil {
-					_ = cleanup(entry)
+					if err := cleanup(entry); err != nil {
+						return err
+					}
 				}
 				keysToDelete = append(keysToDelete, key)
 			}
 		}
 		return nil
 	})
+	if err != nil {
+		return err
+	}
 
 	for _, key := range keysToDelete {
 		_ = s.queue.Delete(key)

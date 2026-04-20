@@ -17,6 +17,8 @@ import (
 type seedingClientStub struct {
 	cfg           config.Debrid
 	remote        *debridTypes.Torrent
+	deleteCalls   []string
+	deleteErr     error
 	stopCalls     []string
 	stopErr       error
 	getTorrentErr error
@@ -34,7 +36,10 @@ func (s *seedingClientStub) GetDownloadLink(torrentID string, file *debridTypes.
 	return debridTypes.DownloadLink{}, nil
 }
 
-func (s *seedingClientStub) DeleteTorrent(torrentId string) error { return nil }
+func (s *seedingClientStub) DeleteTorrent(torrentId string) error {
+	s.deleteCalls = append(s.deleteCalls, torrentId)
+	return s.deleteErr
+}
 func (s *seedingClientStub) StopSeeding(torrentId string) error {
 	s.stopCalls = append(s.stopCalls, torrentId)
 	return s.stopErr
@@ -172,7 +177,9 @@ func newSeedingTestManager(t *testing.T) (*Manager, *seedingClientStub, func()) 
 		storage: strg,
 		clients: clients,
 		logger:  zerolog.Nop(),
+		config:  &config.Config{},
 	}
+	manager.initEntryCache()
 
 	return manager, client, func() {
 		_ = strg.Close()

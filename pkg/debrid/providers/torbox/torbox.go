@@ -161,32 +161,6 @@ func (tb *Torbox) doPostForm(endpoint string, formData map[string]string, result
 	return resp, nil
 }
 
-// doDelete performs a DELETE request
-func (tb *Torbox) doDelete(endpoint string, payload interface{}) (*http.Response, error) {
-	var body io.Reader
-	if payload != nil {
-		data, err := json.Marshal(payload)
-		if err != nil {
-			return nil, err
-		}
-		body = bytes.NewReader(data)
-	}
-
-	req, err := http.NewRequest(http.MethodDelete, tb.Host+endpoint, body)
-	if err != nil {
-		return nil, err
-	}
-	req.Header.Set("Content-Type", "application/json")
-
-	resp, err := tb.client.Do(req)
-	if err != nil {
-		return nil, err
-	}
-	defer resp.Body.Close()
-
-	return resp, nil
-}
-
 type multipartFile struct {
 	FieldName string
 	FileName  string
@@ -577,14 +551,18 @@ func (tb *Torbox) CheckStatus(torrent *types.Torrent) (*types.Torrent, error) {
 }
 
 func (tb *Torbox) DeleteTorrent(torrentId string) error {
-	payload := map[string]string{"torrent_id": torrentId, "action": "Delete"}
+	var res APIResponse[any]
+	payload := map[string]string{"torrent_id": torrentId, "operation": "delete"}
 
-	resp, err := tb.doDelete(fmt.Sprintf("/api/torrents/controltorrent/%s", torrentId), payload)
+	resp, err := tb.doPostJSON("/api/torrents/controltorrent", payload, &res)
 	if err != nil {
 		return err
 	}
 
 	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
+		if res.Detail != "" || res.Error != nil {
+			return fmt.Errorf("torbox API error: Status: %d, Error: %v, Detail: %s", resp.StatusCode, res.Error, res.Detail)
+		}
 		return fmt.Errorf("torbox API error: Status: %d", resp.StatusCode)
 	}
 

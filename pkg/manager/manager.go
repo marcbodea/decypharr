@@ -613,7 +613,9 @@ func (m *Manager) DeleteEntry(infohash string, removePlacements bool) error {
 	}
 	// Delete active placements from debrid clients
 	if removePlacements {
-		go m.RemoveTorrentPlacements(torr)
+		if err := m.RemoveTorrentPlacements(torr); err != nil {
+			return err
+		}
 	}
 
 	if err := m.storage.Delete(infohash); err != nil {

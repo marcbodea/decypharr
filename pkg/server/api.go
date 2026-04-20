@@ -421,8 +421,7 @@ func (s *Server) deleteTorrentEverywhere(hash string, removeFromDebrid bool) (bo
 			if existsInStorage {
 				return nil
 			}
-			go s.manager.RemoveTorrentPlacements(t)
-			return nil
+			return s.manager.RemoveTorrentPlacements(t)
 		})
 		if err == nil {
 			deleted = true

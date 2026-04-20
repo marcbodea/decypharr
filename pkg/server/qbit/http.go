@@ -330,7 +330,11 @@ func (q *QBit) handleTorrentsDelete(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	for _, hash := range hashes {
-		err := q.manager.Queue().Delete(hash, nil)
+		removedPlacementsFromQueue := false
+		err := q.manager.Queue().Delete(hash, func(t *storage.Entry) error {
+			removedPlacementsFromQueue = true
+			return q.manager.RemoveTorrentPlacements(t)
+		})
 		if err != nil && !strings.Contains(err.Error(), "not found") {
 			http.Error(w, err.Error(), http.StatusInternalServerError)
 			return
@@ -341,7 +345,7 @@ func (q *QBit) handleTorrentsDelete(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 		if exists {
-			if err := q.manager.DeleteEntry(hash, false); err != nil {
+			if err := q.manager.DeleteEntry(hash, !removedPlacementsFromQueue); err != nil {
 				http.Error(w, err.Error(), http.StatusInternalServerError)
 				return
 			}

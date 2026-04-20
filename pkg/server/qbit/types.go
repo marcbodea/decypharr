@@ -4,6 +4,7 @@ import (
 	"path/filepath"
 	"time"
 
+	"github.com/sirrobot01/decypharr/internal/config"
 	"github.com/sirrobot01/decypharr/pkg/storage"
 )
 
@@ -429,16 +430,27 @@ func convertToQBitTorrentTorrent(t *storage.Entry) Torrent {
 		seedingTime = max(0, time.Now().Unix()-t.CompletedAt.Unix())
 	}
 
+	state := t.State
+	progress := t.Progress
+	if shouldDeferQBitCompletion(t) {
+		state = storage.EntryStateDownloading
+		if progress >= 1 {
+			progress = 0.999
+		}
+		completionOn = 0
+		seedingTime = 0
+	}
+
 	qbitTorrent := Torrent{
 		Hash:         t.InfoHash,
 		Name:         name,
 		Size:         t.Size,
-		Progress:     t.Progress,
+		Progress:     progress,
 		Dlspeed:      t.Speed,
 		Eta:          int64(0), // ETA not tracked
 		NumSeeds:     t.Seeders,
 		SeedingTime:  seedingTime,
-		State:        t.State,
+		State:        state,
 		Category:     t.Category,
 		SavePath:     t.SavePath,
 		ContentPath:  contentPath,
@@ -446,8 +458,8 @@ func convertToQBitTorrentTorrent(t *storage.Entry) Torrent {
 		CompletionOn: completionOn,
 		Debrid:       t.ActiveProvider,
 		DebridID:     "",
-		AmountLeft:   int64(float64(t.Size) * (1 - t.Progress)),
-		Downloaded:   int64(float64(t.Size) * t.Progress),
+		AmountLeft:   int64(float64(t.Size) * (1 - progress)),
+		Downloaded:   int64(float64(t.Size) * progress),
 		MagnetURI:    t.Magnet,
 		Files:        getTorrentFiles(t),
 
@@ -460,6 +472,16 @@ func convertToQBitTorrentTorrent(t *storage.Entry) Torrent {
 	}
 
 	return qbitTorrent
+}
+
+func shouldDeferQBitCompletion(t *storage.Entry) bool {
+	if t == nil {
+		return false
+	}
+	if t.Action == "" || t.Action == config.DownloadActionNone {
+		return false
+	}
+	return t.CompletedAt == nil || !t.IsComplete
 }
 
 func getTorrentFiles(t *storage.Entry) []TorrentFile {

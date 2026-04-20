@@ -406,15 +406,24 @@ func (m *Manager) processSyncTorrent(t *types.Torrent) (*storage.Entry, error) {
 	}
 
 	if mt.ActiveProvider == t.Debrid && t.Status == types.TorrentStatusDownloaded {
-		mt.State = storage.EntryStatePausedUP
-		mt.IsDownloading = false
-		mt.IsComplete = true
-		if mt.CompletedAt == nil {
-			completedAt := addedOn
-			if existingPlacement := mt.Providers[t.Debrid]; existingPlacement != nil && existingPlacement.DownloadedAt != nil {
-				completedAt = *existingPlacement.DownloadedAt
+		// Keep provider completion separate from local readiness. For entries that
+		// still need a post-download action (symlink/download/strm), Arr should not
+		// see the torrent as completed until markAsCompleted runs after local paths
+		// are ready.
+		if mt.Action == "" || mt.Action == config.DownloadActionNone || mt.CompletedAt != nil {
+			mt.State = storage.EntryStatePausedUP
+			mt.IsDownloading = false
+			mt.IsComplete = true
+			if mt.CompletedAt == nil {
+				completedAt := addedOn
+				if existingPlacement := mt.Providers[t.Debrid]; existingPlacement != nil && existingPlacement.DownloadedAt != nil {
+					completedAt = *existingPlacement.DownloadedAt
+				}
+				mt.CompletedAt = &completedAt
 			}
-			mt.CompletedAt = &completedAt
+		} else {
+			mt.State = storage.EntryStateDownloading
+			mt.IsComplete = false
 		}
 	}
 
